@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  COMPLETE_TRANSITION_MS,
+  RESTORE_TRANSITION_MS,
   filterTasks,
+  footerHintsForContext,
   isSubmitKey,
   moveSelection,
   nextEscapeAction,
   partitionStackedTasks,
   sectionForShortcutKey,
+  selectionAfterToggle,
   stackedNavigationOrder,
   tasksForView,
+  toggleTransitionMs,
   viewForShortcutKey,
 } from "./task-state";
 
@@ -112,5 +117,118 @@ describe("sectionForShortcutKey", () => {
     expect(sectionForShortcutKey("2")).toBe("completed");
     expect(sectionForShortcutKey("3")).toBeNull();
     expect(viewForShortcutKey("1")).toBe("active");
+  });
+});
+
+describe("selectionAfterToggle", () => {
+  const a = { id: "a", title: "A", completed: false };
+  const b = { id: "b", title: "B", completed: false };
+  const c = { id: "c", title: "C", completed: false };
+  const done = { id: "done", title: "Done", completed: true };
+
+  it("selects the next unfinished task after completing one in the middle", () => {
+    expect(
+      selectionAfterToggle([a, b, c, done], { ...b, completed: true }),
+    ).toEqual({
+      selectedId: "c",
+      focusCapture: false,
+      listNavigating: true,
+    });
+  });
+
+  it("selects the previous unfinished task when completing the last unfinished", () => {
+    expect(
+      selectionAfterToggle([a, b, done], { ...b, completed: true }),
+    ).toEqual({
+      selectedId: "a",
+      focusCapture: false,
+      listNavigating: true,
+    });
+  });
+
+  it("clears selection and focuses capture when no unfinished tasks remain", () => {
+    expect(
+      selectionAfterToggle([a, done], { ...a, completed: true }),
+    ).toEqual({
+      selectedId: null,
+      focusCapture: true,
+      listNavigating: false,
+    });
+  });
+
+  it("keeps selection on a restored task in the unfinished section", () => {
+    expect(
+      selectionAfterToggle([a, done], { ...done, completed: false }),
+    ).toEqual({
+      selectedId: "done",
+      focusCapture: false,
+      listNavigating: true,
+    });
+  });
+});
+
+describe("toggleTransitionMs", () => {
+  it("uses 160ms for complete, 120ms for restore, and 0 for reduced motion", () => {
+    expect(toggleTransitionMs(true, false)).toBe(COMPLETE_TRANSITION_MS);
+    expect(toggleTransitionMs(false, false)).toBe(RESTORE_TRANSITION_MS);
+    expect(toggleTransitionMs(true, true)).toBe(0);
+    expect(toggleTransitionMs(false, true)).toBe(0);
+    expect(COMPLETE_TRANSITION_MS).toBe(160);
+    expect(RESTORE_TRANSITION_MS).toBe(120);
+  });
+});
+
+describe("footerHintsForContext", () => {
+  it("shows capture-only hints including Enter add without row actions", () => {
+    expect(
+      footerHintsForContext({ mode: "normal", modifierLabel: "⌘" }),
+    ).toEqual([
+      "Enter 添加",
+      "⌘1/2 分区",
+      "⌘F 查找",
+      "↑↓ 选择",
+      "Esc 关闭",
+    ]);
+  });
+
+  it("shows row-action hints when a task is keyboard-selected", () => {
+    expect(
+      footerHintsForContext({
+        mode: "normal",
+        isListNavigating: true,
+        selectedId: "a",
+        modifierLabel: "Ctrl+",
+      }),
+    ).toEqual(["Space 完成/恢复", "Enter 提醒", "⌫ 删除", "Esc"]);
+  });
+
+  it("shows reminder keyboard closure hints", () => {
+    expect(footerHintsForContext({ mode: "reminder" })).toEqual([
+      "Tab 切换",
+      "Enter 保存",
+      "Esc 取消",
+    ]);
+  });
+
+  it("shows only valid actions for delete, settings, search, and recording", () => {
+    expect(footerHintsForContext({ mode: "delete" })).toEqual([
+      "Enter 确认删除",
+      "Esc 取消",
+    ]);
+    expect(footerHintsForContext({ mode: "settings" })).toEqual(["Esc 关闭"]);
+    expect(footerHintsForContext({ mode: "search" })).toEqual([
+      "↑↓ 选择",
+      "Space 完成/恢复",
+      "Esc 退出搜索",
+    ]);
+    expect(
+      footerHintsForContext({ mode: "settings", isRecordingShortcut: true }),
+    ).toEqual(["Esc 取消录制"]);
+  });
+
+  it("uses the Windows modifier label on capture hints", () => {
+    expect(
+      footerHintsForContext({ mode: "normal", modifierLabel: "Ctrl+" })[1],
+    ).toBe("Ctrl+1/2 分区");
   });
 });

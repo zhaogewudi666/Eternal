@@ -49,3 +49,24 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - The frameless header is the native drag region. Search and settings remain
   ordinary clickable controls outside that drag region, and the last safe
   window position must survive relaunches.
+- Reminder editor is fully keyboard-closable: Tab reaches datetime, repeat,
+  presets, and save/cancel; Enter saves a valid future time; Esc cancels without
+  persistence. Footer while open: `Tab 切换` / `Enter 保存` / `Esc 取消`. Enter
+  must not silently save while a native `<select>` is choosing an option.
+- Reminder presets (`15 分钟` / `1 小时` / `今晚` / `明天`) only fill the local
+  datetime field; they never persist until Enter or 保存. Tonight is the next
+  local 20:00 (today if still ahead, else tomorrow). Tomorrow is the next local
+  calendar day at 09:00. Full datetime + repeat remain available.
+- Completing an unfinished task selects the next unfinished neighbor; else the
+  previous unfinished; if none remain, clear selection and focus capture.
+  Restoring a completed task keeps selection on that task in the unfinished
+  section. Toggle failures leave the list and selection unchanged.
+- Completion feedback is restrained: checkbox and strike update immediately,
+  then the row migrates after 160 ms (complete) or 120 ms (restore), with no
+  bounce. `prefers-reduced-motion` commits immediately. Duplicate toggles during
+  the transition are ignored; timers clear on unmount.
+- Footer hints are context-specific and uncluttered: capture shows Enter add plus
+  navigation/search/Esc only; a keyboard-selected row shows Space complete/restore,
+  Enter reminder, ⌫ delete, Esc; reminder/delete/settings/search/shortcut-recording
+  each show only valid actions. Platform modifier labels stay correct
+  (`⌘` on macOS, `Ctrl+` elsewhere).

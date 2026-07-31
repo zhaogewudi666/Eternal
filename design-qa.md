@@ -1,6 +1,6 @@
 # Eternal Design QA
 
-final result: passed
+final result: passed (0.2.2 automated evidence)
 
 ## Source truth
 
@@ -9,117 +9,131 @@ final result: passed
 - Root-cause audit (pre-fix): `design/audit-2026-08-01/`
 - Authoritative product constraints: `app/AGENTS.md`
 
-## Implementation screenshot evidence (Codex in-app browser)
+## 0.2.2 UX acceptance (automated evidence only)
 
-Full-panel captures from the rendered 0.2.1 UI (not jsdom-only):
+Five user-approved UX groups were implemented with RED→GREEN tests. Counts from
+the final verification in this worker:
+
+| Suite | Result |
+|-------|--------|
+| Frontend vitest | **107 passed** / 6 files |
+| Sites worker | **4 passed** (`npm run test:sites`) |
+| Rust unit tests | **51 passed** (`cargo test`) |
+| Rust format | `cargo fmt --all -- --check` clean |
+| Rust clippy | `cargo clippy --all-targets --all-features -- -D warnings` clean |
+| Frontend production build | `npm run build` → `dist/client` + Sites packaging |
+
+### Group evidence
+
+1. **Reminder full keyboard closure**
+   - RED: `ReminderEditor` Enter-save called 0 times; no preset buttons.
+   - GREEN: Tab reaches controls; Enter saves valid time; Esc closes without
+     `onSave`; Enter on focused `<select>` does not save; footer
+     `Tab 切换` / `Enter 保存` / `Esc 取消`.
+
+2. **Completion navigation**
+   - RED: selection stayed on completed row after toggle.
+   - GREEN: complete → next unfinished; last unfinished → previous; sole
+     unfinished → clear selection + focus capture; restore keeps selection on
+     restored unfinished row; toggle errors still surface without removing the
+     row (existing safe-delete / toggle error paths preserved).
+
+3. **Context-specific footer**
+   - RED: capture footer still showed Space complete; reminder footer was only
+     `Esc 关闭`.
+   - GREEN: capture / selected-row / reminder / delete / settings / recording /
+     search footers match `footerHintsForContext`; macOS `⌘` vs Windows `Ctrl+`.
+
+4. **Reminder presets**
+   - RED: no `15 分钟` / `1 小时` / `今晚` / `明天` controls.
+   - GREEN: presets fill local datetime only (no silent persist); Enter confirms;
+     pure helpers cover 15m, 1h, tonight (today 20:00 or tomorrow 20:00),
+     tomorrow 09:00.
+
+5. **Restrained completion feedback**
+   - RED: row migrated immediately with selection glued to toggled id.
+   - GREEN: checkbox/strike before section move; 160 ms complete / 120 ms restore;
+     reduced-motion commits immediately; duplicate Space ignored in flight;
+     unmount clears timers (fake-timer component tests).
+
+## Historical 0.2.1 browser screenshot evidence
+
+Full-panel captures from the rendered 0.2.1 UI (not jsdom-only). Geometry and
+stacked list hierarchy remain the 0.2.2 baseline; footer copy and reminder
+presets supersede the 0.2.1 footer strings in those PNGs.
 
 | State | Full panel | Focused crop |
 |-------|------------|--------------|
 | Light normal | `design/qa/v021-light-normal-full.png` | `design/qa/v021-light-normal.png` |
 | Light selected row | `design/qa/v021-light-selected-full.png` | — |
 | Reminder editor | `design/qa/v021-reminder-full.png` | `design/qa/v021-reminder.png` |
-| Delete confirmation (pre-fix P2) | `design/qa/v021-delete-confirm-full.png` | `design/qa/v021-delete-confirm.png` |
 | Delete confirmation (post-fix) | `design/qa/v021-delete-confirm-postfix-full.png` | `design/qa/v021-delete-confirm-postfix.png` |
 | Dark default | `design/qa/v021-dark-default-full.png` | `design/qa/v021-dark-default.png` |
 | Reference vs dark | `design/qa/v021-reference-vs-dark-default.png` | — |
 
-Secondary structural HTML (non-authoritative for pixels):
-
-- `design/qa/v021-light-normal.html`
-- `design/qa/v021-dark-normal.html`
-- `design/qa/v021-reminder.html`
-- `design/qa/v021-delete-confirm.html`
-
 ## Browser-rendered viewport / states
 
-- Viewport target remains **380 × 560**. Captures show the compact frameless panel without clipped header, capture field, list actions, or footer.
-- **Light normal**: unfinished rows above, `已完成` section below; every row exposes a quiet bell and trash control; footer teaches `⌘1/2` / `⌘F` / arrows / Space / Esc.
-- **Light selected**: selected unfinished row gains a soft lavender selection fill; footer becomes context-aware (`Enter 提醒`, `⌫ 删除`).
-- **Reminder**: popover editor over the list with title, datetime, repeat, and save/remove actions; list and footer remain in the same panel.
-- **Delete confirmation (post-fix)**: dialog titled `删除任务` with description only in the header and bottom actions **exactly** `取消` + `删除` (no top-right cancel, no `保留`). Autofocus on `删除`; footer `Enter 确认删除` / `Esc 取消`. No clipping at 380×560. Modal semantics: `role="dialog"`, `aria-modal="true"`.
-- **Dark default (historical 0.2.1 capture)**: same hierarchy and spacing on the
-  former warmer dusk palette. The later native-black follow-up below supersedes
-  its color tokens while preserving the captured geometry and interaction states.
+- Viewport target remains **380 × 560**.
+- Unfinished rows above, labeled `已完成` section below; capture always available.
+- Dark tokens remain macOS-native neutrals (`#1C1C1E` / `#2C2C2E` / `#0A84FF`);
+  transparent native window + `14 px` shell radius preserved.
+- 0.2.2 does **not** claim new physical-device browser PNGs in this pass; UI
+  behavior is covered by the automated suite above.
 
-## Full comparison
-
-- Side-by-side: `design/qa/v021-reference-vs-dark-default.png` (left reference, right Eternal dark implementation).
-- Shared: stacked unfinished → completed list, dense rows, compact capture, quiet surfaces, system-like density.
-- Intentional product differences from the mobile reference: Eternal infinity/check brand, 380×560 desktop utility chrome, fixed keyboard-help footer, always-visible reminder bells, quieter trash affordances, strike-through completed titles, no bottom three-tab navigation.
-
-## Focused reminder / delete states
-
-- **Reminder**: `v021-reminder-full.png` / `v021-reminder.png` — bell affordance opens the existing editor; reminded rows keep time/repeat metadata.
-- **Delete pre-fix**: `v021-delete-confirm-full.png` / `v021-delete-confirm.png` — showed redundant cancel paths (P2).
-- **Delete post-fix**: `v021-delete-confirm-postfix-full.png` / `v021-delete-confirm-postfix.png` — single cancel + one destructive confirm; compact overlay; no clipping.
-
-### Pre-fix P2 (observed in Codex browser capture)
-
-`v021-delete-confirm-full.png` and `v021-delete-confirm.png` show **two cancellation paths**: top-right `取消` and bottom-left `保留`, plus bottom-right `删除`.
-
-### Post-fix visual evidence (Codex browser re-capture)
-
-After simplifying the dialog:
-
-1. Header is title + description only (no top-right cancel).
-2. Bottom row is only `取消` and `删除`.
-3. DOM: one dialog named `删除任务` with exactly those two actions.
-4. Captures: `v021-delete-confirm-postfix-full.png` and `v021-delete-confirm-postfix.png` confirm no clipping at 380×560.
-5. Automated tests keep asserting dialog role, modal semantics, single cancel, and no `保留`.
-
-## Interaction checks
+## Interaction checks (0.2.2)
 
 | Interaction | Evidence |
 |-------------|----------|
-| Bell on tasks without reminders | Light/dark full captures; row “设置提醒” control |
-| Bell/metadata on reminded tasks | Dark default + light selected (time / “每 30 分钟”) |
-| Enter opens reminder when row selected | Footer context help + reminder overlay capture |
-| Trash / Delete opens confirmation | Post-fix delete full capture + tests |
-| Enter confirms delete | Behavior tests (`safe task deletion`) |
-| Esc / single 取消 cancels | Post-fix PNG + behavior tests |
-| Completed-task delete path | Behavior tests |
-| Selection after cancel/delete | Behavior tests |
-| Light + dark readable | Full PNGs above |
-| No clipped controls at 380×560 | Full-panel PNGs including post-fix delete |
+| Reminder Tab / Enter / Esc | `ReminderEditor.test.jsx` |
+| Reminder presets fill only | `ReminderEditor.test.jsx` + `reminder-time.test.js` |
+| Complete → next/prev unfinished | `App.test.jsx` completion navigation |
+| Restore keeps selection | `App.test.jsx` |
+| Context footers | `App.test.jsx` + `task-state.test.js` `footerHintsForContext` |
+| 160/120 ms transition | `App.test.jsx` restrained completion feedback |
+| Reduced motion immediate commit | `App.test.jsx` |
+| Safe delete / Esc focus return | Existing `App.test.jsx` safe deletion suite |
+| Platform modifier labels | Footer + shortcut format tests |
 
-## Source / implementation notes
+## 0.2.2 packaging evidence
 
-- Reminder affordance: always-on `.reminder-control`; search and completed rows keep it.
-- Delete path: Rust `delete` + `delete_task` command + frontend bridge; confirmation required before persist; deleting removes any reminder with the task.
-- Visual tokens in the captured 0.2.1 set used warmer neutrals and soft
-  periwinkle. The native-black follow-up supersedes the dark tokens; light mode
-  keeps its restrained warm palette. No gradients, glass blur, glow, hearts,
-  flowers, or decorative AI chrome.
-- Phosphor icons and Eternal infinity/check brand preserved.
+Artifacts under `releases/0.2.2/`:
 
-## Out of scope for this QA pass
+| File | Size | Notes |
+|------|------|-------|
+| `Eternal-0.2.2-macOS-arm64.dmg` | 7,279,316 bytes (~6.9 MiB) | UDZO; `hdiutil verify` VALID; embeds `index-DsgUJarr` |
+| `Eternal-0.2.2-Windows-x64-Setup.exe` | 3,805,740 bytes (~3.6 MiB) | NSIS x64; PE Nullsoft installer; `app.exe` embeds `index-DsgUJarr` |
+| `INSTALL.zh-CN.md` | install + keyboard/preset notes | |
+| `SHA256SUMS` | both installers | `shasum -a 256 -c` OK |
 
-- Platform-native installation / Gatekeeper / SmartScreen / tray behavior on physical devices was **not** claimed.
-- Official macOS DMG packaging is performed by the integrator outside the worker sandbox (`hdiutil create` blocked here). Fallback ISO DMG is not recreated in finalization.
+macOS app (bundled inside DMG after mount):
 
-## 2026-08-01 native-black and outer-corner follow-up
+- `diskutil image attach` mount shows `Eternal.app` + `Applications -> /Applications`
+- `CFBundleShortVersionString` / `CFBundleVersion` = **0.2.2**
+- Executable `Mach-O 64-bit arm64`
+- Embedded frontend asset names from the post-footer-fix build (`index-DsgUJarr`, `index-DOwouRDQ`) present in binary
+- Signing: adhoc/linker-signed only (`--no-sign`); not Developer ID / not notarized
+- Search footer uses `Space 完成/恢复` (search spans unfinished + completed)
 
-- Root cause: `.app-shell` already clipped its contents, but the native Tauri
-  window was opaque and `body` painted the full rectangular canvas. The CSS
-  radius therefore could not remove the four native window corners.
-- Native boundary: the main window is now transparent, macOS private window
-  transparency is enabled, and the Tauri dependency opts into
-  `macos-private-api`. `body` and `#root` remain transparent while `.app-shell`
-  owns the visible background and a `14 px` clipped radius.
-- Dark runtime tokens now resolve to macOS-style neutral values:
-  `#1C1C1E` background, `#2C2C2E` surface, `#0A84FF` accent, plus system
-  semantic green/orange/red. Purple tint is absent from dark surfaces,
-  selections, and focus accents.
-- Browser runtime inspection confirmed transparent page canvas, `14 px` shell
-  radius, and the expected dark token values. `npm run tauri build -- --bundles
-  app --no-sign` produced the macOS application successfully with the native
-  transparency feature enabled.
-- Physical macOS/Windows window-compositor appearance remains a real-device
-  acceptance check; this follow-up does not claim that user-run install test.
+Windows:
+
+- Built with `cargo-xwin` + `makensis` targeting `x86_64-pc-windows-msvc`
+- `app.exe` is PE32+ x86-64; installer is NSIS x64 setup
+- Unsigned (SmartScreen expected)
+
+## Out of scope / limits
+
+- Unsigned installers only; no Apple Developer ID notarization, no Windows
+  Authenticode, no physical-device Gatekeeper/SmartScreen click-through proof.
+- No new Codex in-app browser PNG set for 0.2.2 footers/presets in this worker
+  pass; automated tests are the authoritative 0.2.2 behavior evidence.
+- macOS DMG packaging used the established local toolchain with a write-blocked
+  `hdiutil create` workaround (template UDRW binary/plist in-place update +
+  `hdiutil convert`/`verify` + `diskutil image attach` content check).
 
 ## History
 
-1. **Initial 0.2.1 implementation QA**: structure + automated tests; browser PNG path incomplete in the worker environment.
-2. **Codex browser inspection**: captured the real PNG set; flagged P2 duplicate cancel actions on delete confirm (`v021-delete-confirm*.png`).
-3. **Acceptance correction**: simplified delete dialog to one `取消` + one `删除` with dialog semantics; tests GREEN.
-4. **Post-fix browser re-capture**: `v021-delete-confirm-postfix-full.png` / `v021-delete-confirm-postfix.png` confirm the fixed UI with no clipping → **final result: passed**.
+1. **0.2.1 implementation QA** through delete-dialog post-fix and native-black
+   transparent window follow-up (see prior sections / `design/qa/v021-*`).
+2. **0.2.2 UX five-group release**: reminder keyboard + presets, completion
+   navigation, context footers, restrained toggle feedback; version bump and
+   unsigned macOS arm64 + Windows x64 packages under `releases/0.2.2/`.

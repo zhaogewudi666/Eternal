@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -226,7 +226,53 @@ describe("Eternal task panel", () => {
       expect(bridge.createTask).not.toHaveBeenCalled();
     });
 
-    it("keeps selection on the toggled task after it moves sections", async () => {
+    it("selects the next unfinished task after completing one in the middle", async () => {
+      bridge.listTasks.mockResolvedValueOnce([
+        activeTask,
+        secondActiveTask,
+        { ...activeTask, id: "third-active", title: "回复邮件", createdAtMs: 80 },
+      ]);
+      bridge.toggleTask.mockImplementation(async (id) => {
+        const map = {
+          active: activeTask,
+          "second-active": secondActiveTask,
+          "third-active": {
+            ...activeTask,
+            id: "third-active",
+            title: "回复邮件",
+            createdAtMs: 80,
+          },
+        };
+        const task = map[id];
+        return {
+          ...task,
+          completed: true,
+          completedAtMs: 200,
+        };
+      });
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("核对客户名单");
+
+      // selectedId already starts on first unfinished; first ArrowDown moves to second-active.
+      await user.keyboard("{ArrowDown} ");
+
+      expect(bridge.toggleTask).toHaveBeenCalledWith("second-active");
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="third-active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      expect(
+        document
+          .querySelector('[data-task-id="second-active"]')
+          ?.classList.contains("is-completed"),
+      ).toBe(true);
+    });
+
+    it("selects the previous unfinished task when completing the last unfinished", async () => {
       bridge.listTasks.mockResolvedValueOnce([activeTask, secondActiveTask]);
       bridge.toggleTask.mockImplementation(async () => ({
         ...secondActiveTask,
@@ -243,16 +289,68 @@ describe("Eternal task panel", () => {
       await waitFor(() => {
         expect(
           document
-            .querySelector('[data-task-id="second-active"]')
-            ?.classList.contains("is-completed"),
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
         ).toBe(true);
       });
-      expect(
-        document
-          .querySelector('[data-task-id="second-active"]')
-          ?.classList.contains("is-selected"),
-      ).toBe(true);
-      expect(document.querySelectorAll(".task-row.is-selected").length).toBe(1);
+    });
+
+    it("clears selection and focuses capture after completing the last unfinished task", async () => {
+      bridge.listTasks.mockResolvedValueOnce([activeTask, completedTask]);
+      bridge.toggleTask.mockImplementation(async () => ({
+        ...activeTask,
+        completed: true,
+        completedAtMs: 200,
+      }));
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      // Jump to the unfinished section so the first active row is keyboard-selected.
+      fireEvent.keyDown(window, { key: "1", metaKey: true });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      await user.keyboard(" ");
+
+      await waitFor(() => {
+        expect(document.querySelector(".task-row.is-selected")).toBeNull();
+      });
+      expect(document.activeElement).toBe(
+        screen.getByRole("textbox", { name: "添加任务" }),
+      );
+    });
+
+    it("keeps selection on a restored task in the unfinished section", async () => {
+      bridge.listTasks.mockResolvedValueOnce([activeTask, completedTask]);
+      bridge.toggleTask.mockImplementation(async () => ({
+        ...completedTask,
+        completed: false,
+        completedAtMs: null,
+      }));
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("整理目录");
+
+      fireEvent.keyDown(window, { key: "2", metaKey: true });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="completed"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      await user.keyboard(" ");
+
+      await waitFor(() => {
+        const row = document.querySelector('[data-task-id="completed"]');
+        expect(row?.classList.contains("is-selected")).toBe(true);
+        expect(row?.classList.contains("is-completed")).toBe(false);
+      });
     });
 
     it("does not reintroduce exclusive views or collapsed completed controls", async () => {
@@ -773,6 +871,316 @@ describe("Eternal task panel", () => {
       await user.keyboard("{ArrowDown}");
 
       expect(screen.getByText(/Enter.*提醒|提醒.*Enter/)).toBeTruthy();
+    });
+  });
+
+  describe("context-specific footer", () => {
+    it("shows capture hints with Enter add and without row-only actions", async () => {
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      const footer = screen.getByLabelText("快捷键帮助");
+      expect(footer.textContent).toContain("Enter 添加");
+      expect(footer.textContent).toContain("Ctrl+1/2 分区");
+      expect(footer.textContent).toContain("Ctrl+F 查找");
+      expect(footer.textContent).not.toContain("Enter 提醒");
+      expect(footer.textContent).not.toContain("⌫ 删除");
+      expect(footer.textContent).not.toMatch(/Space 完成(?!\/恢复)/);
+    });
+
+    it("shows only row actions when a task is keyboard-selected", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      await user.keyboard("{ArrowDown}");
+
+      const footer = screen.getByLabelText("快捷键帮助");
+      expect(footer.textContent).toContain("Space 完成/恢复");
+      expect(footer.textContent).toContain("Enter 提醒");
+      expect(footer.textContent).toContain("⌫ 删除");
+      expect(footer.textContent).not.toContain("Enter 添加");
+      expect(footer.textContent).not.toContain("Ctrl+F");
+    });
+
+    it("shows reminder, delete, settings, search, and recording-only footers", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      await user.keyboard("{ArrowDown}{Enter}");
+      let footer = screen.getByLabelText("快捷键帮助");
+      expect(footer.textContent).toBe("Tab 切换Enter 保存Esc 取消");
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      await user.keyboard("{Delete}");
+      footer = screen.getByLabelText("快捷键帮助");
+      expect(footer.textContent).toBe("Enter 确认删除Esc 取消");
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+      footer = screen.getByLabelText("快捷键帮助");
+      expect(footer.textContent).toBe("Esc 关闭");
+
+      await user.click(screen.getByRole("button", { name: "录制全局快捷键" }));
+      footer = screen.getByLabelText("快捷键帮助");
+      expect(footer.textContent).toBe("Esc 取消录制");
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      fireEvent.keyDown(window, { key: "Escape" });
+      fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+      footer = screen.getByLabelText("快捷键帮助");
+      expect(footer.textContent).toContain("Esc 退出搜索");
+      expect(footer.textContent).toContain("Space 完成/恢复");
+      expect(footer.textContent).not.toMatch(/(?:^|[^/])Space 完成(?!\/恢复)/);
+      expect(footer.textContent).not.toContain("Enter 添加");
+    });
+
+    it("uses complete/restore wording in search because results span both sections", async () => {
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+      const footer = screen.getByLabelText("快捷键帮助");
+      // Search hits unfinished and completed rows; "Space 完成" alone is wrong.
+      expect(footer.textContent).toContain("Space 完成/恢复");
+      expect(footer.textContent).not.toMatch(/(?:^|[^/])Space 完成(?!\/恢复)/);
+      expect(footer.textContent).toContain("↑↓ 选择");
+      expect(footer.textContent).toContain("Esc 退出搜索");
+    });
+
+    it("uses macOS modifier labels on capture footer", async () => {
+      usePlatform("MacIntel");
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      const footer = screen.getByLabelText("快捷键帮助");
+      expect(footer.textContent).toContain("⌘1/2 分区");
+      expect(footer.textContent).toContain("⌘F 查找");
+    });
+  });
+
+  describe("restrained completion feedback", () => {
+    it("updates checkbox and strike before migrating the row, then navigates", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      bridge.listTasks.mockResolvedValueOnce([activeTask, secondActiveTask]);
+      bridge.toggleTask.mockImplementation(async () => ({
+        ...activeTask,
+        completed: true,
+        completedAtMs: 200,
+      }));
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "1", metaKey: true });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      await user.keyboard(" ");
+      expect(bridge.toggleTask).toHaveBeenCalledWith("active");
+
+      await waitFor(() => {
+        const row = document.querySelector('[data-task-id="active"]');
+        expect(row?.classList.contains("is-completed")).toBe(true);
+        expect(
+          row?.closest('[data-section="active"]'),
+        ).toBeTruthy();
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(160);
+      });
+
+      await waitFor(() => {
+        const row = document.querySelector('[data-task-id="active"]');
+        expect(row?.closest('[data-section="completed"]')).toBeTruthy();
+        expect(
+          document
+            .querySelector('[data-task-id="second-active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+
+      vi.useRealTimers();
+    });
+
+    it("uses 120ms restore timing and keeps selection on the restored task", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      bridge.listTasks.mockResolvedValueOnce([activeTask, completedTask]);
+      bridge.toggleTask.mockImplementation(async () => ({
+        ...completedTask,
+        completed: false,
+        completedAtMs: null,
+      }));
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<App />);
+      await screen.findByText("整理目录");
+
+      fireEvent.keyDown(window, { key: "2", metaKey: true });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="completed"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      await user.keyboard(" ");
+
+      await waitFor(() => {
+        const row = document.querySelector('[data-task-id="completed"]');
+        expect(row?.classList.contains("is-completed")).toBe(false);
+        expect(row?.closest('[data-section="completed"]')).toBeTruthy();
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+
+      await waitFor(() => {
+        const row = document.querySelector('[data-task-id="completed"]');
+        expect(row?.closest('[data-section="active"]')).toBeTruthy();
+        expect(row?.classList.contains("is-selected")).toBe(true);
+      });
+
+      vi.useRealTimers();
+    });
+
+    it("commits immediately when prefers-reduced-motion is set", async () => {
+      const previousMatchMedia = window.matchMedia;
+      window.matchMedia = (query) => ({
+        matches: String(query).includes("prefers-reduced-motion"),
+        media: String(query),
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      });
+      bridge.listTasks.mockResolvedValueOnce([activeTask, secondActiveTask]);
+      bridge.toggleTask.mockImplementation(async () => ({
+        ...activeTask,
+        completed: true,
+        completedAtMs: 200,
+      }));
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "1", metaKey: true });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      await user.keyboard(" ");
+
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.closest('[data-section="completed"]'),
+        ).toBeTruthy();
+        expect(
+          document
+            .querySelector('[data-task-id="second-active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+
+      window.matchMedia = previousMatchMedia;
+    });
+
+    it("ignores duplicate toggles while a transition is in flight", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      let resolveToggle;
+      bridge.listTasks.mockResolvedValueOnce([activeTask, secondActiveTask]);
+      bridge.toggleTask.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveToggle = resolve;
+          }),
+      );
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "1", metaKey: true });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      await user.keyboard(" ");
+      await user.keyboard(" ");
+      expect(bridge.toggleTask).toHaveBeenCalledTimes(1);
+
+      resolveToggle({
+        ...activeTask,
+        completed: true,
+        completedAtMs: 200,
+      });
+
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-completed"),
+        ).toBe(true);
+      });
+
+      await user.keyboard(" ");
+      expect(bridge.toggleTask).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        vi.advanceTimersByTime(160);
+      });
+      vi.useRealTimers();
+    });
+
+    it("cleans transition timers on unmount", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      bridge.listTasks.mockResolvedValueOnce([activeTask, secondActiveTask]);
+      bridge.toggleTask.mockImplementation(async () => ({
+        ...activeTask,
+        completed: true,
+        completedAtMs: 200,
+      }));
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const { unmount } = render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "1", metaKey: true });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      await user.keyboard(" ");
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-completed"),
+        ).toBe(true);
+      });
+
+      unmount();
+      expect(() => {
+        vi.advanceTimersByTime(500);
+      }).not.toThrow();
+      vi.useRealTimers();
     });
   });
 

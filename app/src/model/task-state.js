@@ -45,6 +45,90 @@ export function selectionAfterDelete(tasks, removedId) {
   return remaining[Math.min(index, remaining.length - 1)]?.id || null;
 }
 
+/// After finishing an unfinished task, prefer the next unfinished neighbor;
+/// else the previous unfinished; if none remain, clear selection and return
+/// focus to capture. Restoring a completed task keeps selection on it.
+///
+/// `preToggleTasks` is the list before the toggle is committed to section layout.
+/// `updated` is the task returned by the backend after toggle.
+export function selectionAfterToggle(preToggleTasks, updated) {
+  if (!updated?.id) {
+    return { selectedId: null, focusCapture: true, listNavigating: false };
+  }
+
+  if (!updated.completed) {
+    return {
+      selectedId: updated.id,
+      focusCapture: false,
+      listNavigating: true,
+    };
+  }
+
+  const unfinished = preToggleTasks.filter((task) => !task.completed);
+  const index = unfinished.findIndex((task) => task.id === updated.id);
+  const remaining = unfinished.filter((task) => task.id !== updated.id);
+
+  if (!remaining.length) {
+    return { selectedId: null, focusCapture: true, listNavigating: false };
+  }
+
+  const next =
+    index >= 0
+      ? remaining[Math.min(index, remaining.length - 1)]
+      : remaining[0];
+
+  return {
+    selectedId: next?.id || null,
+    focusCapture: false,
+    listNavigating: Boolean(next),
+  };
+}
+
+export const COMPLETE_TRANSITION_MS = 160;
+export const RESTORE_TRANSITION_MS = 120;
+
+export function toggleTransitionMs(willBeCompleted, prefersReducedMotion) {
+  if (prefersReducedMotion) return 0;
+  return willBeCompleted ? COMPLETE_TRANSITION_MS : RESTORE_TRANSITION_MS;
+}
+
+/// Context-specific footer hints. Only actions valid in the current mode.
+export function footerHintsForContext({
+  mode,
+  isListNavigating = false,
+  selectedId = null,
+  isRecordingShortcut = false,
+  isSearching = false,
+  modifierLabel = "⌘",
+} = {}) {
+  if (isRecordingShortcut) {
+    return ["Esc 取消录制"];
+  }
+  if (mode === "delete") {
+    return ["Enter 确认删除", "Esc 取消"];
+  }
+  if (mode === "reminder") {
+    return ["Tab 切换", "Enter 保存", "Esc 取消"];
+  }
+  if (mode === "settings") {
+    return ["Esc 关闭"];
+  }
+  if (isSearching || mode === "search") {
+    // Search spans unfinished and completed rows, so Space may complete or restore.
+    return ["↑↓ 选择", "Space 完成/恢复", "Esc 退出搜索"];
+  }
+  if (isListNavigating && selectedId) {
+    return ["Space 完成/恢复", "Enter 提醒", "⌫ 删除", "Esc"];
+  }
+  return [
+    "Enter 添加",
+    `${modifierLabel}1/2 分区`,
+    `${modifierLabel}F 查找`,
+    "↑↓ 选择",
+    "Esc 关闭",
+  ];
+}
+
 /// Stacked layout: unfinished first, completed below. Search keeps the same
 /// order so keyboard navigation never jumps past a section boundary wrongly.
 export function partitionStackedTasks(tasks) {

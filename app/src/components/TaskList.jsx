@@ -17,11 +17,14 @@ function TaskRow({
   task,
   selected,
   showStatus,
+  visualCompleted,
+  isTransitioning,
   onSelect,
   onToggle,
   onEditReminder,
   onRequestDelete,
 }) {
+  const completed = visualCompleted ?? task.completed;
   const hasReminder = Boolean(task.reminder);
   const reminderName = hasReminder
     ? `编辑提醒：${task.title}`
@@ -30,8 +33,8 @@ function TaskRow({
   return (
     <div
       className={`task-row ${selected ? "is-selected" : ""} ${
-        task.completed ? "is-completed" : ""
-      }`}
+        completed ? "is-completed" : ""
+      } ${isTransitioning ? "is-toggling" : ""}`}
       data-task-id={task.id}
       onMouseDown={() => onSelect(task.id)}
     >
@@ -39,18 +42,18 @@ function TaskRow({
         className="task-checkbox"
         type="button"
         role="checkbox"
-        aria-checked={task.completed}
-        aria-label={`${task.completed ? "恢复" : "完成"}：${task.title}`}
+        aria-checked={completed}
+        aria-label={`${completed ? "恢复" : "完成"}：${task.title}`}
         onClick={() => onToggle(task.id)}
       >
-        {task.completed && <Check size={12} weight="bold" aria-hidden="true" />}
+        {completed && <Check size={12} weight="bold" aria-hidden="true" />}
       </button>
       <span className="task-title">{task.title}</span>
       {showStatus && (
         <span
-          className={`task-status ${task.completed ? "is-completed" : ""}`}
+          className={`task-status ${completed ? "is-completed" : ""}`}
         >
-          {task.completed ? "已完成" : "待办"}
+          {completed ? "已完成" : "待办"}
         </span>
       )}
       <div className="task-actions">
@@ -89,6 +92,7 @@ function TaskSection({
   selectedId,
   showStatus,
   quiet,
+  toggleTransition,
   onSelect,
   onToggle,
   onEditReminder,
@@ -105,18 +109,26 @@ function TaskSection({
       {heading ? <h2 className="task-section-heading">{heading}</h2> : null}
       <div className="task-group">
         {tasks.length ? (
-          tasks.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              selected={selectedId === task.id}
-              showStatus={showStatus}
-              onSelect={onSelect}
-              onToggle={onToggle}
-              onEditReminder={onEditReminder}
-              onRequestDelete={onRequestDelete}
-            />
-          ))
+          tasks.map((task) => {
+            const isTransitioning = toggleTransition?.id === task.id;
+            const visualCompleted = isTransitioning
+              ? toggleTransition.updated.completed
+              : task.completed;
+            return (
+              <TaskRow
+                key={task.id}
+                task={task}
+                selected={selectedId === task.id}
+                showStatus={showStatus}
+                visualCompleted={visualCompleted}
+                isTransitioning={isTransitioning}
+                onSelect={onSelect}
+                onToggle={onToggle}
+                onEditReminder={onEditReminder}
+                onRequestDelete={onRequestDelete}
+              />
+            );
+          })
         ) : (
           <div className="empty-state">{emptyMessage}</div>
         )}
@@ -135,6 +147,7 @@ export function TaskList({
   isSearching = false,
   activeSectionRef,
   completedSectionRef,
+  toggleTransition = null,
   onSelect,
   onToggle,
   onEditReminder,
@@ -170,6 +183,7 @@ export function TaskList({
         selectedId={selectedId}
         showStatus={showStatus}
         quiet={false}
+        toggleTransition={toggleTransition}
         onSelect={onSelect}
         onToggle={onToggle}
         onEditReminder={onEditReminder}
@@ -183,6 +197,7 @@ export function TaskList({
         selectedId={selectedId}
         showStatus={showStatus}
         quiet
+        toggleTransition={toggleTransition}
         onSelect={onSelect}
         onToggle={onToggle}
         onEditReminder={onEditReminder}

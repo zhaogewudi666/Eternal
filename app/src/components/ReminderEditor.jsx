@@ -1,10 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-function toLocalInputValue(timestamp) {
-  const date = new Date(timestamp || Date.now() + 15 * 60_000);
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-}
+import {
+  reminderPresetAt,
+  toLocalInputValue,
+} from "../model/reminder-time";
+
+const PRESETS = [
+  { id: "15m", label: "15 分钟" },
+  { id: "1h", label: "1 小时" },
+  { id: "tonight", label: "今晚" },
+  { id: "tomorrow", label: "明天" },
+];
 
 export function ReminderEditor({ task, onSave, onClear, onClose }) {
   const [at, setAt] = useState(toLocalInputValue(task.reminder?.nextAtMs));
@@ -12,6 +18,7 @@ export function ReminderEditor({ task, onSave, onClear, onClose }) {
     String(task.reminder?.repeatEveryMinutes || ""),
   );
   const [currentTime, setCurrentTime] = useState(Date.now);
+  const timeInputRef = useRef(null);
 
   useEffect(() => {
     setAt(toLocalInputValue(task.reminder?.nextAtMs));
@@ -26,8 +33,45 @@ export function ReminderEditor({ task, onSave, onClear, onClose }) {
   const timestamp = new Date(at).getTime();
   const canSave = Number.isFinite(timestamp) && timestamp > currentTime;
 
+  function applyPreset(presetId) {
+    setAt(toLocalInputValue(reminderPresetAt(presetId, Date.now())));
+    // Keep keyboard confirmation on the time field after filling a preset.
+    timeInputRef.current?.focus();
+  }
+
+  function trySave() {
+    if (!canSave) return;
+    onSave(timestamp, repeat ? Number.parseInt(repeat, 10) : null);
+  }
+
+  function handleKeyDown(event) {
+    if (event.isComposing || event.keyCode === 229) return;
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+
+    if (event.key !== "Enter" || event.shiftKey) return;
+
+    // Native <select> uses Enter to commit an option — do not save then.
+    // Buttons activate via their own click path; avoid double-firing save.
+    const tag = event.target?.tagName;
+    if (tag === "SELECT" || tag === "BUTTON") return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    trySave();
+  }
+
   return (
-    <section className="popover reminder-editor" aria-label="编辑提醒">
+    <section
+      className="popover reminder-editor"
+      aria-label="编辑提醒"
+      onKeyDown={handleKeyDown}
+    >
       <header className="popover-header">
         <div>
           <strong>提醒</strong>
@@ -37,9 +81,22 @@ export function ReminderEditor({ task, onSave, onClear, onClose }) {
           取消
         </button>
       </header>
+      <div className="reminder-presets" role="group" aria-label="快捷时间">
+        {PRESETS.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            className="preset-chip"
+            onClick={() => applyPreset(preset.id)}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
       <label className="field">
         <span>时间</span>
         <input
+          ref={timeInputRef}
           type="datetime-local"
           autoFocus
           value={at}
@@ -67,12 +124,7 @@ export function ReminderEditor({ task, onSave, onClear, onClose }) {
           className="primary-button"
           type="button"
           disabled={!canSave}
-          onClick={() =>
-            onSave(
-              timestamp,
-              repeat ? Number.parseInt(repeat, 10) : null,
-            )
-          }
+          onClick={trySave}
         >
           保存
         </button>

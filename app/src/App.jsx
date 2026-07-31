@@ -32,13 +32,23 @@ import {
 } from "./model/shortcut";
 import {
   filterTasks,
+  footerHintsForContext,
   moveSelection,
   nextEscapeAction,
   partitionStackedTasks,
   sectionForShortcutKey,
   selectionAfterDelete,
+  selectionAfterToggle,
   stackedNavigationOrder,
+  toggleTransitionMs,
 } from "./model/task-state";
+
+function prefersReducedMotion() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 function replaceTask(tasks, updated) {
   return tasks.map((task) => (task.id === updated.id ? updated : task));
@@ -77,10 +87,15 @@ export function App() {
   const [shortcut, setShortcut] = useState(null);
   const [shortcutError, setShortcutError] = useState("");
   const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
+  // Visual-only completion state while the row stays in its old section.
+  // { id, updated } — checkbox/strike follow `updated` until the timer commits.
+  const [toggleTransition, setToggleTransition] = useState(null);
   const inputRef = useRef(null);
   const activeSectionRef = useRef(null);
   const completedSectionRef = useRef(null);
   const listScrollRef = useRef(null);
+  const toggleTimerRef = useRef(null);
+  const toggleInFlightRef = useRef(false);
 
   const platform = useMemo(() => currentPlatform(), []);
   const isSearching = mode === "search";
@@ -176,16 +191,66 @@ export function App() {
     }
   }
 
-  const handleToggle = useCallback(async (id) => {
-    try {
-      const updated = await toggleTask(id);
-      setTasks((current) => replaceTask(current, updated));
-      // Stacked layout keeps both sections on one panel; stay on the same row.
-      setSelectedId(updated.id);
-    } catch (reason) {
-      setError(String(reason));
+  const clearToggleTimer = useCallback(() => {
+    if (toggleTimerRef.current != null) {
+      window.clearTimeout(toggleTimerRef.current);
+      toggleTimerRef.current = null;
     }
   }, []);
+
+  useEffect(() => () => clearToggleTimer(), [clearToggleTimer]);
+
+  const commitToggleTransition = useCallback(
+    (preToggleTasks, updated) => {
+      setTasks((current) => replaceTask(current, updated));
+      setToggleTransition(null);
+      toggleInFlightRef.current = false;
+
+      const next = selectionAfterToggle(preToggleTasks, updated);
+      setSelectedId(next.selectedId);
+      setIsListNavigating(next.listNavigating);
+      if (next.focusCapture) {
+        inputRef.current?.focus();
+      }
+    },
+    [],
+  );
+
+  const handleToggle = useCallback(
+    async (id) => {
+      if (toggleInFlightRef.current || toggleTransition) return;
+      toggleInFlightRef.current = true;
+      try {
+        const updated = await toggleTask(id);
+        const preToggleTasks = tasks;
+        const delay = toggleTransitionMs(
+          updated.completed,
+          prefersReducedMotion(),
+        );
+
+        // Checkbox/strike update immediately; section membership waits.
+        setToggleTransition({ id: updated.id, updated });
+        setSelectedId(updated.id);
+        setIsListNavigating(true);
+
+        clearToggleTimer();
+        if (delay <= 0) {
+          commitToggleTransition(preToggleTasks, updated);
+          return;
+        }
+
+        toggleTimerRef.current = window.setTimeout(() => {
+          toggleTimerRef.current = null;
+          commitToggleTransition(preToggleTasks, updated);
+        }, delay);
+      } catch (reason) {
+        toggleInFlightRef.current = false;
+        setToggleTransition(null);
+        setError(String(reason));
+      }
+    },
+    [clearToggleTimer, commitToggleTransition, tasks, toggleTransition],
+  );
 
   const openReminder = useCallback((id) => {
     setSelectedId(id);
@@ -493,35 +558,25 @@ export function App() {
   ]);
 
   const modifierLabel = isMacPlatform(platform) ? "⌘" : "Ctrl+";
-  const footerHints = useMemo(() => {
-    if (mode === "delete") {
-      return ["Enter 确认删除", "Esc 取消"];
-    }
-    if (mode === "reminder") {
-      return ["Esc 关闭"];
-    }
-    if (mode === "settings") {
-      return ["Esc 关闭"];
-    }
-    if (isListNavigating && selectedId) {
-      return [
-        `${modifierLabel}1/2`,
-        `${modifierLabel}F`,
-        "↑↓",
-        "Enter 提醒",
-        "⌫ 删除",
-        "Space",
-        "Esc",
-      ];
-    }
-    return [
-      `${modifierLabel}1/2 分区`,
-      `${modifierLabel}F 查找`,
-      "↑↓ 选择",
-      "Space 完成",
-      "Esc 关闭",
-    ];
-  }, [isListNavigating, mode, modifierLabel, selectedId]);
+  const footerHints = useMemo(
+    () =>
+      footerHintsForContext({
+        mode,
+        isListNavigating,
+        selectedId,
+        isRecordingShortcut,
+        isSearching,
+        modifierLabel,
+      }),
+    [
+      isListNavigating,
+      isRecordingShortcut,
+      isSearching,
+      mode,
+      modifierLabel,
+      selectedId,
+    ],
+  );
 
   return (
     <main className="app-shell">
@@ -592,6 +647,7 @@ export function App() {
           isSearching={isSearching}
           activeSectionRef={activeSectionRef}
           completedSectionRef={completedSectionRef}
+          toggleTransition={toggleTransition}
           onSelect={(id) => {
             setSelectedId(id);
             setIsListNavigating(true);

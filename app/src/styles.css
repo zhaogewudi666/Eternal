@@ -344,6 +344,17 @@ button {
   text-decoration-thickness: 1px;
 }
 
+/* Quiet complete/restore feedback — no bounce or scale. */
+.task-row.is-toggling .task-checkbox,
+.task-row.is-toggling .task-title {
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    text-decoration-color 160ms ease,
+    opacity 160ms ease;
+}
+
 .task-actions {
   display: inline-flex;
   align-items: center;
@@ -612,6 +623,36 @@ button {
 
 .shortcut-hint.is-error {
   color: var(--color-overdue);
+}
+
+.reminder-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.preset-chip {
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-secondary);
+  background: var(--color-bg);
+  font-size: 11px;
+  line-height: 1;
+  cursor: default;
+}
+
+.preset-chip:hover,
+.preset-chip:focus-visible {
+  color: var(--color-text);
+  border-color: color-mix(in srgb, var(--color-accent), transparent 40%);
+}
+
+.preset-chip:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent), transparent 50%);
+  outline-offset: 1px;
 }
 
 .field {
