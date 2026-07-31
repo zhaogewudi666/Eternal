@@ -49,6 +49,7 @@ describe("nextEscapeAction", () => {
   it("closes sublayers before search and the panel", () => {
     expect(nextEscapeAction("reminder")).toBe("close-overlay");
     expect(nextEscapeAction("settings")).toBe("close-overlay");
+    expect(nextEscapeAction("delete")).toBe("close-overlay");
     expect(nextEscapeAction("search")).toBe("exit-search");
     expect(nextEscapeAction("normal")).toBe("hide-panel");
   });

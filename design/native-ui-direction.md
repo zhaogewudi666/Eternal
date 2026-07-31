@@ -33,38 +33,41 @@ Eternal 应当像操作系统自带的小工具，而不是网页仪表盘或 AI
 - 搜索：覆盖未完成与已完成，并为每行标注「待办 / 已完成」。
 - `⌘/Ctrl+1` 跳到未完成分区，`⌘/Ctrl+2` 跳到已完成分区；只移动选择与滚动，
   不切换互斥视图。
-- 固定底部快捷键帮助：`⌘/Ctrl+1·2`、`⌘/Ctrl+F`、`↑↓`、`Space`、`Esc`。
+- 固定底部快捷键帮助：默认 `⌘/Ctrl+1·2`、`⌘/Ctrl+F`、`↑↓`、`Space`、`Esc`；
+  键盘选中行时上下文显示 `Enter 提醒`、`⌫ 删除`。
+- 每行都有可发现的提醒铃铛（无提醒时也显示安静铃铛）；垃圾桶在悬停/选中时更明显。
+- 删除需经确认层：`Enter` 确认，`Esc` 取消；不提供撤销箱或批量删除。
 - 不复制参考图的底部三栏导航。
 
-## Dark Tokens
+## Dark Tokens (0.2.1 warmer neutrals + soft periwinkle)
 
-- `--color-bg`: `#1C1C1E`
-- `--color-surface`: `#2C2C2E`
-- `--color-surface-hover`: `#323235`
-- `--color-selected`: `#2D2D30`
-- `--color-border`: `#3A3A3C`
-- `--color-text`: `#F2F2F7`
-- `--color-text-secondary`: `#A1A1A6`
-- `--color-text-muted`: `#8E8E93`
-- `--color-accent`: `#4C7DFF`
-- `--color-success`: `#34C759`
-- `--color-reminder`: `#FF9F0A`
-- `--color-overdue`: `#FF453A`
+- `--color-bg`: `#1D1A20`
+- `--color-surface`: `#2A2530`
+- `--color-surface-hover`: `#322C38`
+- `--color-selected`: `#353040`
+- `--color-border`: `#433C4A`
+- `--color-text`: `#F4EEF5`
+- `--color-text-secondary`: `#B3A9B8`
+- `--color-text-muted`: `#918896`
+- `--color-accent`: `#9AA0EA`
+- `--color-success`: `#3DBA6E`
+- `--color-reminder`: `#E0A85C`
+- `--color-overdue`: `#FF6B78`
 
-## Light Tokens
+## Light Tokens (0.2.1 warmer neutrals + soft periwinkle)
 
-- `--color-bg`: `#F2F2F7`
-- `--color-surface`: `#FFFFFF`
-- `--color-surface-hover`: `#F7F7FA`
-- `--color-selected`: `#E9E9ED`
-- `--color-border`: `#D1D1D6`
-- `--color-text`: `#1C1C1E`
-- `--color-text-secondary`: `#5F6368`
-- `--color-text-muted`: `#6E6E73`
-- `--color-accent`: `#2864DC`
-- `--color-success`: `#248A3D`
-- `--color-reminder`: `#A35B00`
-- `--color-overdue`: `#D70015`
+- `--color-bg`: `#F4F2F6`
+- `--color-surface`: `#FFFCFE`
+- `--color-surface-hover`: `#F3EEF5`
+- `--color-selected`: `#EBE4F0`
+- `--color-border`: `#DDD4E0`
+- `--color-text`: `#2A2430`
+- `--color-text-secondary`: `#6A6270`
+- `--color-text-muted`: `#847B88`
+- `--color-accent`: `#6B6FD4`
+- `--color-success`: `#2F8A52`
+- `--color-reminder`: `#9A6B2F`
+- `--color-overdue`: `#C23B4A`
 
 ## 平台行为
 

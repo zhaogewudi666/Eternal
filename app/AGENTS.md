@@ -19,8 +19,8 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
   controls, and low decoration. Do not add glass blur, glow, marketing
   gradients, oversized cards, or AI-looking ornamental chrome.
 - Keep the product to capture, search, keyboard navigation, complete/restore,
-  reminders, completed history, a configurable global shortcut, and
-  light/dark/system theme selection.
+  reminders, confirmed task deletion, completed history, a configurable global
+  shortcut, and light/dark/system theme selection.
 - Unfinished and completed tasks share one scrollable panel: unfinished rows
   first, then a clearly labeled `已完成` section below. There is no exclusive
   todo/completed view and no top segmented switch. Capture stays available in

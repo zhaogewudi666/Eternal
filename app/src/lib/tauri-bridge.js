@@ -98,6 +98,18 @@ export async function toggleTask(id) {
   });
 }
 
+export async function deleteTask(id) {
+  if (isTauriRuntime()) return invoke("delete_task", { id });
+
+  return previewMutation((tasks) => {
+    const index = tasks.findIndex((candidate) => candidate.id === id);
+    if (index < 0) {
+      throw new Error("找不到这项待办");
+    }
+    tasks.splice(index, 1);
+  });
+}
+
 export async function setReminder(id, nextAtMs, repeatEveryMinutes) {
   if (isTauriRuntime()) {
     return invoke("set_reminder", { id, nextAtMs, repeatEveryMinutes });

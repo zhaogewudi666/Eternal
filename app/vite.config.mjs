@@ -17,7 +17,7 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    exclude: ["tests/**", "node_modules/**", "dist/**"],
+    exclude: ["tests/**", "node_modules/**", "dist/**", "src-tauri/**"],
     globals: true,
   },
   plugins: [react()],

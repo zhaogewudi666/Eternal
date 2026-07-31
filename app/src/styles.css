@@ -4,52 +4,59 @@
     -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI",
     sans-serif;
   font-synthesis: none;
-  --color-bg: #f2f2f7;
-  --color-surface: #ffffff;
-  --color-surface-hover: #f7f7fa;
-  --color-selected: #e9e9ed;
-  --color-border: #d1d1d6;
-  --color-text: #1c1c1e;
-  --color-secondary: #5f6368;
-  --color-muted: #6e6e73;
-  --color-accent: #2864dc;
-  --color-success: #248a3d;
-  --color-reminder: #a35b00;
-  --color-overdue: #d70015;
-  --panel-shadow: 0 16px 36px rgb(0 0 0 / 0.16);
+  /* Warmer neutrals + soft periwinkle / lavender-blush accents */
+  --color-bg: #f4f2f6;
+  --color-surface: #fffcfe;
+  --color-surface-hover: #f3eef5;
+  --color-selected: #ebe4f0;
+  --color-border: #ddd4e0;
+  --color-text: #2a2430;
+  --color-secondary: #6a6270;
+  --color-muted: #847b88;
+  --color-accent: #6b6fd4;
+  --color-accent-soft: #c9c3e8;
+  --color-blush: #e8d5dc;
+  --color-success: #2f8a52;
+  --color-reminder: #9a6b2f;
+  --color-overdue: #c23b4a;
+  --panel-shadow: 0 14px 32px rgb(48 36 58 / 0.12);
 }
 
 :root[data-theme="dark"] {
-  --color-bg: #1c1c1e;
-  --color-surface: #2c2c2e;
-  --color-surface-hover: #323235;
-  --color-selected: #2d2d30;
-  --color-border: #3a3a3c;
-  --color-text: #f2f2f7;
-  --color-secondary: #a1a1a6;
-  --color-muted: #8e8e93;
-  --color-accent: #4c7dff;
-  --color-success: #34c759;
-  --color-reminder: #ff9f0a;
-  --color-overdue: #ff453a;
-  --panel-shadow: 0 18px 42px rgb(0 0 0 / 0.34);
+  --color-bg: #1d1a20;
+  --color-surface: #2a2530;
+  --color-surface-hover: #322c38;
+  --color-selected: #353040;
+  --color-border: #433c4a;
+  --color-text: #f4eef5;
+  --color-secondary: #b3a9b8;
+  --color-muted: #918896;
+  --color-accent: #9aa0ea;
+  --color-accent-soft: #5a5680;
+  --color-blush: #5a4450;
+  --color-success: #3dba6e;
+  --color-reminder: #e0a85c;
+  --color-overdue: #ff6b78;
+  --panel-shadow: 0 16px 38px rgb(0 0 0 / 0.36);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-bg: #1c1c1e;
-    --color-surface: #2c2c2e;
-    --color-surface-hover: #323235;
-    --color-selected: #2d2d30;
-    --color-border: #3a3a3c;
-    --color-text: #f2f2f7;
-    --color-secondary: #a1a1a6;
-    --color-muted: #8e8e93;
-    --color-accent: #4c7dff;
-    --color-success: #34c759;
-    --color-reminder: #ff9f0a;
-    --color-overdue: #ff453a;
-    --panel-shadow: 0 18px 42px rgb(0 0 0 / 0.34);
+    --color-bg: #1d1a20;
+    --color-surface: #2a2530;
+    --color-surface-hover: #322c38;
+    --color-selected: #353040;
+    --color-border: #433c4a;
+    --color-text: #f4eef5;
+    --color-secondary: #b3a9b8;
+    --color-muted: #918896;
+    --color-accent: #9aa0ea;
+    --color-accent-soft: #5a5680;
+    --color-blush: #5a4450;
+    --color-success: #3dba6e;
+    --color-reminder: #e0a85c;
+    --color-overdue: #ff6b78;
+    --panel-shadow: 0 16px 38px rgb(0 0 0 / 0.36);
   }
 }
 
@@ -91,7 +98,7 @@ button {
   display: grid;
   grid-template-rows: 58px 56px minmax(0, 1fr) 38px;
   background: var(--color-bg);
-  border: 1px solid color-mix(in srgb, var(--color-border), transparent 18%);
+  border: 1px solid color-mix(in srgb, var(--color-border), transparent 12%);
   border-radius: 13px;
   box-shadow: var(--panel-shadow);
 }
@@ -189,7 +196,7 @@ button {
 }
 
 .composer:focus-within {
-  border-color: color-mix(in srgb, var(--color-text), transparent 68%);
+  border-color: color-mix(in srgb, var(--color-accent), transparent 55%);
 }
 
 .composer-icon {
@@ -275,11 +282,11 @@ button {
 
 .task-row {
   min-height: 42px;
-  padding: 0 10px;
+  padding: 0 8px 0 10px;
   border-radius: 8px;
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto auto;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   border: 1px solid transparent;
 }
@@ -290,7 +297,7 @@ button {
 
 .task-row.is-selected {
   background: var(--color-selected);
-  border-color: color-mix(in srgb, var(--color-text), transparent 78%);
+  border-color: color-mix(in srgb, var(--color-accent), transparent 72%);
 }
 
 .task-checkbox {
@@ -336,21 +343,75 @@ button {
   text-decoration-thickness: 1px;
 }
 
-.reminder-pill {
-  height: 25px;
-  padding: 0 6px;
+.task-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  justify-self: end;
+}
+
+.reminder-control {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
   border: 0;
   border-radius: 6px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  color: var(--color-reminder);
+  color: color-mix(in srgb, var(--color-accent), var(--color-muted) 35%);
   background: transparent;
   font-size: 11px;
+  line-height: 1;
+  cursor: default;
 }
 
-.reminder-pill:hover {
+.reminder-control.has-reminder {
+  color: var(--color-reminder);
+  padding-inline: 6px;
+}
+
+.reminder-control:hover,
+.reminder-control:focus-visible {
+  color: var(--color-reminder);
   background: color-mix(in srgb, var(--color-reminder), transparent 90%);
+}
+
+.reminder-control:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent), transparent 50%);
+  outline-offset: 1px;
+}
+
+.row-delete {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--color-muted);
+  background: transparent;
+  opacity: 0.42;
+  cursor: default;
+}
+
+.task-row:hover .row-delete,
+.task-row.is-selected .row-delete,
+.row-delete:focus-visible {
+  opacity: 0.92;
+}
+
+.row-delete:hover,
+.row-delete:focus-visible {
+  color: var(--color-overdue);
+  background: color-mix(in srgb, var(--color-overdue), transparent 90%);
+}
+
+.row-delete:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-overdue), transparent 45%);
+  outline-offset: 1px;
 }
 
 .task-status {
@@ -377,13 +438,21 @@ button {
 
 .shortcut-bar {
   border-top: 1px solid var(--color-border);
-  padding: 0 12px;
+  padding: 0 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 4px;
   color: var(--color-muted);
   font-size: 10px;
   white-space: nowrap;
+  overflow: hidden;
+}
+
+.shortcut-bar span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .popover {
@@ -396,7 +465,30 @@ button {
   border: 1px solid var(--color-border);
   border-radius: 10px;
   background: var(--color-surface);
-  box-shadow: 0 12px 28px rgb(0 0 0 / 0.22);
+  box-shadow: 0 12px 28px rgb(42 32 52 / 0.18);
+}
+
+.delete-confirm .popover-header {
+  margin-bottom: 8px;
+}
+
+.delete-confirm .popover-header span {
+  max-width: 280px;
+  line-height: 1.35;
+}
+
+.delete-confirm .popover-actions {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.delete-confirm .popover-actions .text-button {
+  color: var(--color-secondary);
+}
+
+.delete-confirm .popover-actions .text-button:hover,
+.delete-confirm .popover-actions .text-button:focus-visible {
+  color: var(--color-text);
 }
 
 .popover-header {
@@ -457,7 +549,7 @@ button {
 .segmented-control label.is-active {
   color: var(--color-text);
   background: var(--color-surface);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+  box-shadow: 0 1px 3px rgb(42 32 52 / 0.1);
 }
 
 .segmented-control input {
@@ -502,7 +594,7 @@ button {
 
 .shortcut-recorder:hover,
 .shortcut-recorder:focus-visible {
-  border-color: color-mix(in srgb, var(--color-text), transparent 62%);
+  border-color: color-mix(in srgb, var(--color-accent), transparent 40%);
 }
 
 .shortcut-recorder.is-recording {
@@ -559,6 +651,10 @@ button {
 .primary-button {
   color: white;
   background: var(--color-accent);
+}
+
+.primary-button.danger-confirm {
+  background: var(--color-overdue);
 }
 
 .primary-button:disabled {

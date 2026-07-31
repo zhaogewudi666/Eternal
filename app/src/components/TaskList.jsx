@@ -1,4 +1,4 @@
-import { BellSimple, Check, Repeat } from "@phosphor-icons/react";
+import { BellSimple, Check, Repeat, Trash } from "@phosphor-icons/react";
 
 function reminderLabel(reminder) {
   if (!reminder) return "";
@@ -20,7 +20,13 @@ function TaskRow({
   onSelect,
   onToggle,
   onEditReminder,
+  onRequestDelete,
 }) {
+  const hasReminder = Boolean(task.reminder);
+  const reminderName = hasReminder
+    ? `编辑提醒：${task.title}`
+    : `设置提醒：${task.title}`;
+
   return (
     <div
       className={`task-row ${selected ? "is-selected" : ""} ${
@@ -47,21 +53,29 @@ function TaskRow({
           {task.completed ? "已完成" : "待办"}
         </span>
       )}
-      {task.reminder && (
+      <div className="task-actions">
         <button
-          className="reminder-pill"
+          className={`reminder-control ${hasReminder ? "has-reminder" : ""}`}
           type="button"
-          aria-label={`编辑提醒：${task.title}`}
+          aria-label={reminderName}
           onClick={() => onEditReminder(task.id)}
         >
-          {task.reminder.repeatEveryMinutes ? (
-            <Repeat size={15} weight="regular" />
+          {task.reminder?.repeatEveryMinutes ? (
+            <Repeat size={15} weight="regular" aria-hidden="true" />
           ) : (
-            <BellSimple size={15} weight="regular" />
+            <BellSimple size={15} weight="regular" aria-hidden="true" />
           )}
-          <span>{reminderLabel(task.reminder)}</span>
+          {hasReminder ? <span>{reminderLabel(task.reminder)}</span> : null}
         </button>
-      )}
+        <button
+          className="row-delete"
+          type="button"
+          aria-label={`删除：${task.title}`}
+          onClick={() => onRequestDelete(task.id)}
+        >
+          <Trash size={14} weight="regular" aria-hidden="true" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -78,6 +92,7 @@ function TaskSection({
   onSelect,
   onToggle,
   onEditReminder,
+  onRequestDelete,
 }) {
   if (!tasks.length && !emptyMessage) return null;
 
@@ -99,6 +114,7 @@ function TaskSection({
               onSelect={onSelect}
               onToggle={onToggle}
               onEditReminder={onEditReminder}
+              onRequestDelete={onRequestDelete}
             />
           ))
         ) : (
@@ -122,6 +138,7 @@ export function TaskList({
   onSelect,
   onToggle,
   onEditReminder,
+  onRequestDelete,
 }) {
   const hasAny = activeTasks.length > 0 || completedTasks.length > 0;
 
@@ -156,6 +173,7 @@ export function TaskList({
         onSelect={onSelect}
         onToggle={onToggle}
         onEditReminder={onEditReminder}
+        onRequestDelete={onRequestDelete}
       />
       <TaskSection
         tasks={completedTasks}
@@ -168,6 +186,7 @@ export function TaskList({
         onSelect={onSelect}
         onToggle={onToggle}
         onEditReminder={onEditReminder}
+        onRequestDelete={onRequestDelete}
       />
     </section>
   );

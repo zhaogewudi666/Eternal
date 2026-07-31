@@ -6,6 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { DeleteConfirm } from "./components/DeleteConfirm";
 import { ReminderEditor } from "./components/ReminderEditor";
 import { SettingsPopover } from "./components/SettingsPopover";
 import { TaskComposer } from "./components/TaskComposer";
@@ -13,6 +14,7 @@ import { TaskList } from "./components/TaskList";
 import {
   clearReminder,
   createTask,
+  deleteTask,
   getGlobalShortcut,
   hidePanel,
   listTasks,
@@ -34,6 +36,7 @@ import {
   nextEscapeAction,
   partitionStackedTasks,
   sectionForShortcutKey,
+  selectionAfterDelete,
   stackedNavigationOrder,
 } from "./model/task-state";
 
@@ -81,7 +84,6 @@ export function App() {
 
   const platform = useMemo(() => currentPlatform(), []);
   const isSearching = mode === "search";
-  const isCapturing = !isSearching;
 
   useEffect(() => {
     listTasks()
@@ -113,11 +115,21 @@ export function App() {
     window.localStorage.setItem("eternal.theme", theme);
   }, [theme]);
 
+  // Only react to mode transitions. Re-running on isListNavigating would steal
+  // focus back to capture/search after ArrowDown navigation.
   useEffect(() => {
-    if (mode === "normal" || mode === "search") {
+    if (mode === "search") {
       setIsListNavigating(false);
       inputRef.current?.focus();
+      return;
     }
+
+    // Returning from reminder/delete may keep list selection in the same
+    // render; only focus capture when that render is not list-navigating.
+    if (mode === "normal" && !isListNavigating) {
+      inputRef.current?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mode transitions only
   }, [mode]);
 
   useEffect(() => {
@@ -152,7 +164,7 @@ export function App() {
 
   async function handleCreate() {
     const title = draft.trim();
-    if (!title || !isCapturing) return;
+    if (!title || mode !== "normal") return;
     try {
       const created = await createTask(title);
       setTasks((current) => [created, ...current]);
@@ -174,6 +186,35 @@ export function App() {
       setError(String(reason));
     }
   }, []);
+
+  const openReminder = useCallback((id) => {
+    setSelectedId(id);
+    setIsListNavigating(true);
+    setMode("reminder");
+  }, []);
+
+  const openDeleteConfirm = useCallback((id) => {
+    setSelectedId(id);
+    setIsListNavigating(true);
+    setMode("delete");
+  }, []);
+
+  const handleDelete = useCallback(async () => {
+    if (!selectedId) return;
+    const removedId = selectedId;
+    const nextId = selectionAfterDelete(tasks, removedId);
+    try {
+      await deleteTask(removedId);
+      setTasks((current) => current.filter((task) => task.id !== removedId));
+      setSelectedId(nextId);
+      setIsListNavigating(Boolean(nextId));
+      setMode("normal");
+    } catch (reason) {
+      setError(String(reason?.message || reason));
+      setMode("normal");
+      setIsListNavigating(true);
+    }
+  }, [selectedId, tasks]);
 
   const jumpToSection = useCallback((section) => {
     setMode((current) => {
@@ -297,7 +338,12 @@ export function App() {
         event.preventDefault();
         const action = nextEscapeAction(mode, { isRecordingShortcut });
         if (action === "cancel-recording") stopRecording();
-        if (action === "close-overlay") setMode("normal");
+        if (action === "close-overlay") {
+          setMode("normal");
+          if (mode === "delete" || mode === "reminder") {
+            setIsListNavigating(true);
+          }
+        }
         if (action === "exit-search") {
           setMode("normal");
           setQuery("");
@@ -310,6 +356,14 @@ export function App() {
         event.preventDefault();
         const accelerator = acceleratorFromEvent(event);
         if (accelerator) applyShortcut(accelerator);
+        return;
+      }
+
+      if (mode === "delete") {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          handleDelete();
+        }
         return;
       }
 
@@ -371,7 +425,7 @@ export function App() {
       if (
         event.key.length === 1 &&
         event.key !== " " &&
-        (isSearching || isCapturing)
+        (isSearching || mode === "normal")
       ) {
         event.preventDefault();
         setIsListNavigating(false);
@@ -400,6 +454,17 @@ export function App() {
       }
 
       if (
+        (event.key === "Delete" || event.key === "Backspace") &&
+        !event.shiftKey &&
+        isListNavigating &&
+        selectedId
+      ) {
+        event.preventDefault();
+        openDeleteConfirm(selectedId);
+        return;
+      }
+
+      if (
         event.key === "Enter" &&
         !event.shiftKey &&
         isListNavigating &&
@@ -414,19 +479,49 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     applyShortcut,
+    handleDelete,
     handleToggle,
-    isCapturing,
     isListNavigating,
     isRecordingShortcut,
     isSearching,
     jumpToSection,
     mode,
     navigableTasks,
+    openDeleteConfirm,
     selectedId,
     stopRecording,
   ]);
 
   const modifierLabel = isMacPlatform(platform) ? "⌘" : "Ctrl+";
+  const footerHints = useMemo(() => {
+    if (mode === "delete") {
+      return ["Enter 确认删除", "Esc 取消"];
+    }
+    if (mode === "reminder") {
+      return ["Esc 关闭"];
+    }
+    if (mode === "settings") {
+      return ["Esc 关闭"];
+    }
+    if (isListNavigating && selectedId) {
+      return [
+        `${modifierLabel}1/2`,
+        `${modifierLabel}F`,
+        "↑↓",
+        "Enter 提醒",
+        "⌫ 删除",
+        "Space",
+        "Esc",
+      ];
+    }
+    return [
+      `${modifierLabel}1/2 分区`,
+      `${modifierLabel}F 查找`,
+      "↑↓ 选择",
+      "Space 完成",
+      "Esc 关闭",
+    ];
+  }, [isListNavigating, mode, modifierLabel, selectedId]);
 
   return (
     <main className="app-shell">
@@ -466,7 +561,7 @@ export function App() {
       </header>
 
       <TaskComposer
-        mode={mode}
+        mode={mode === "search" ? "search" : "normal"}
         value={isSearching ? query : draft}
         inputRef={inputRef}
         onChange={isSearching ? setQuery : setDraft}
@@ -502,10 +597,8 @@ export function App() {
             setIsListNavigating(true);
           }}
           onToggle={handleToggle}
-          onEditReminder={(id) => {
-            setSelectedId(id);
-            setMode("reminder");
-          }}
+          onEditReminder={openReminder}
+          onRequestDelete={openDeleteConfirm}
         />
       </div>
 
@@ -529,16 +622,28 @@ export function App() {
           task={selectedTask}
           onSave={handleSaveReminder}
           onClear={handleClearReminder}
-          onClose={() => setMode("normal")}
+          onClose={() => {
+            setMode("normal");
+            setIsListNavigating(true);
+          }}
+        />
+      )}
+
+      {mode === "delete" && selectedTask && (
+        <DeleteConfirm
+          task={selectedTask}
+          onConfirm={handleDelete}
+          onClose={() => {
+            setMode("normal");
+            setIsListNavigating(true);
+          }}
         />
       )}
 
       <footer className="shortcut-bar" aria-label="快捷键帮助">
-        <span>{modifierLabel}1/2 分区</span>
-        <span>{modifierLabel}F 查找</span>
-        <span>↑↓ 选择</span>
-        <span>Space 完成</span>
-        <span>Esc 关闭</span>
+        {footerHints.map((hint) => (
+          <span key={hint}>{hint}</span>
+        ))}
       </footer>
     </main>
   );

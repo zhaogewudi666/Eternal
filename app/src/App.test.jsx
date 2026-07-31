@@ -8,6 +8,7 @@ const bridge = vi.hoisted(() => ({
   listTasks: vi.fn(),
   createTask: vi.fn(),
   toggleTask: vi.fn(),
+  deleteTask: vi.fn(),
   setReminder: vi.fn(),
   clearReminder: vi.fn(),
   hidePanel: vi.fn(),
@@ -43,6 +44,17 @@ const secondActiveTask = {
   createdAtMs: 90,
 };
 
+const remindedTask = {
+  ...activeTask,
+  id: "reminded",
+  title: "喝一杯水",
+  reminder: {
+    nextAtMs: Date.now() + 3_600_000,
+    repeatEveryMinutes: null,
+    lastFiredAtMs: null,
+  },
+};
+
 const originalPlatform = Object.getOwnPropertyDescriptor(
   window.navigator,
   "platform",
@@ -74,6 +86,7 @@ describe("Eternal task panel", () => {
         completedAtMs: task.completed ? null : 200,
       };
     });
+    bridge.deleteTask.mockResolvedValue(undefined);
     bridge.getGlobalShortcut.mockResolvedValue({
       accelerator: "CommandOrControl+Shift+Space",
       registered: true,
@@ -683,5 +696,280 @@ describe("Eternal task panel", () => {
     expect(systemTheme.checked).toBe(true);
     expect(document.activeElement).toBe(systemTheme);
     expect(document.documentElement.dataset.theme).toBe("system");
+  });
+
+  describe("reminder discoverability", () => {
+    it("exposes a reminder control on unfinished and completed tasks without reminders", async () => {
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      expect(
+        screen.getByRole("button", { name: "设置提醒：提交周报" }),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "设置提醒：整理目录" }),
+      ).toBeTruthy();
+    });
+
+    it("keeps reminder metadata and the bell control on reminded rows", async () => {
+      bridge.listTasks.mockResolvedValueOnce([remindedTask, completedTask]);
+      render(<App />);
+      await screen.findByText("喝一杯水");
+
+      const editReminder = screen.getByRole("button", {
+        name: "编辑提醒：喝一杯水",
+      });
+      expect(editReminder).toBeTruthy();
+      expect(editReminder.textContent.length).toBeGreaterThan(0);
+    });
+
+    it("opens the reminder editor from the bell on a task without a reminder", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      await user.click(
+        screen.getByRole("button", { name: "设置提醒：提交周报" }),
+      );
+
+      const editor = screen.getByRole("region", { name: "编辑提醒" });
+      expect(editor.textContent).toContain("提交周报");
+    });
+
+    it("still opens the reminder editor with Enter on a keyboard-selected row", async () => {
+      const user = userEvent.setup();
+      bridge.listTasks.mockResolvedValueOnce([activeTask, secondActiveTask]);
+      render(<App />);
+      await screen.findByText("核对客户名单");
+
+      await user.keyboard("{ArrowDown}{Enter}");
+
+      expect(screen.getByRole("region", { name: "编辑提醒" }).textContent).toContain(
+        "核对客户名单",
+      );
+    });
+
+    it("keeps the reminder control visible in search results", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "f", metaKey: true });
+      const search = await screen.findByRole("searchbox", { name: "搜索待办" });
+      await user.type(search, "提交");
+
+      expect(
+        screen.getByRole("button", { name: "设置提醒：提交周报" }),
+      ).toBeTruthy();
+    });
+
+    it("teaches Enter as the reminder shortcut once a row is selected", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      expect(screen.queryByText(/Enter.*提醒/)).toBeNull();
+
+      await user.keyboard("{ArrowDown}");
+
+      expect(screen.getByText(/Enter.*提醒|提醒.*Enter/)).toBeTruthy();
+    });
+  });
+
+  describe("safe task deletion", () => {
+    it("opens a confirmation overlay from the row trash control", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      await user.click(screen.getByRole("button", { name: "删除：提交周报" }));
+
+      const dialog = screen.getByRole("dialog", { name: "删除任务" });
+      expect(dialog).toBeTruthy();
+      expect(dialog.getAttribute("aria-modal")).toBe("true");
+      expect(dialog.textContent).toContain("提交周报");
+      expect(bridge.deleteTask).not.toHaveBeenCalled();
+    });
+
+    it("exposes a single cancel action and one destructive delete action", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      await user.click(screen.getByRole("button", { name: "删除：提交周报" }));
+
+      const dialog = screen.getByRole("dialog", { name: "删除任务" });
+      expect(screen.getByRole("button", { name: "取消" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "删除" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "保留" })).toBeNull();
+      expect(dialog.querySelectorAll("button").length).toBe(2);
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "删除" }),
+      );
+      expect(
+        screen.getByText(/将永久移除「提交周报」及其提醒/),
+      ).toBeTruthy();
+    });
+
+    it("opens confirmation with Delete or Backspace on a keyboard-selected row", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "1", metaKey: true });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+
+      await user.keyboard("{Delete}");
+      expect(screen.getByRole("dialog", { name: "删除任务" })).toBeTruthy();
+      expect(bridge.deleteTask).not.toHaveBeenCalled();
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByRole("dialog", { name: "删除任务" })).toBeNull();
+
+      await user.keyboard("{Backspace}");
+      expect(screen.getByRole("dialog", { name: "删除任务" })).toBeTruthy();
+    });
+
+    it("confirms deletion with Enter and removes the task from the list", async () => {
+      const user = userEvent.setup();
+      bridge.deleteTask.mockImplementation(async (id) => {
+        if (id !== "active") throw new Error(`unexpected id ${id}`);
+      });
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "1", metaKey: true });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      await user.keyboard("{Delete}{Enter}");
+
+      await waitFor(() => {
+        expect(bridge.deleteTask).toHaveBeenCalledWith("active");
+      });
+      expect(screen.queryByText("提交周报")).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "删除任务" })).toBeNull();
+      expect(screen.getByText("整理目录")).toBeTruthy();
+    });
+
+    it("cancels deletion with Escape and returns selection to the same row", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "1", metaKey: true });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      await user.keyboard("{Delete}");
+      expect(screen.getByRole("dialog", { name: "删除任务" })).toBeTruthy();
+
+      fireEvent.keyDown(window, { key: "Escape" });
+
+      expect(screen.queryByRole("dialog", { name: "删除任务" })).toBeNull();
+      expect(
+        document
+          .querySelector('[data-task-id="active"]')
+          ?.classList.contains("is-selected"),
+      ).toBe(true);
+      expect(bridge.deleteTask).not.toHaveBeenCalled();
+      expect(bridge.hidePanel).not.toHaveBeenCalled();
+    });
+
+    it("cancels deletion from the single 取消 action without deleting", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      await user.click(screen.getByRole("button", { name: "删除：提交周报" }));
+      await user.click(screen.getByRole("button", { name: "取消" }));
+
+      expect(screen.queryByRole("dialog", { name: "删除任务" })).toBeNull();
+      expect(screen.getByText("提交周报")).toBeTruthy();
+      expect(bridge.deleteTask).not.toHaveBeenCalled();
+    });
+
+    it("deletes completed tasks through the same confirmation path", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("整理目录");
+
+      await user.click(screen.getByRole("button", { name: "删除：整理目录" }));
+      await user.keyboard("{Enter}");
+
+      await waitFor(() => {
+        expect(bridge.deleteTask).toHaveBeenCalledWith("completed");
+      });
+      expect(screen.queryByText("整理目录")).toBeNull();
+      expect(screen.getByText("提交周报")).toBeTruthy();
+    });
+
+    it("moves selection to a coherent neighbor after deleting the selected task", async () => {
+      bridge.listTasks.mockResolvedValueOnce([
+        activeTask,
+        secondActiveTask,
+        completedTask,
+      ]);
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("核对客户名单");
+
+      fireEvent.keyDown(window, { key: "1", metaKey: true });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      await user.keyboard("{Delete}{Enter}");
+
+      await waitFor(() => {
+        expect(bridge.deleteTask).toHaveBeenCalledWith("active");
+      });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="second-active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+    });
+
+    it("preserves backend delete errors without removing the row", async () => {
+      bridge.deleteTask.mockRejectedValueOnce("找不到这项待办");
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "1", metaKey: true });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      await user.keyboard("{Delete}{Enter}");
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert").textContent).toContain("找不到这项待办");
+      });
+      expect(screen.getByText("提交周报")).toBeTruthy();
+    });
   });
 });

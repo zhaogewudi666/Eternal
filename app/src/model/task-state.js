@@ -24,9 +24,25 @@ export function isSubmitKey(event) {
 
 export function nextEscapeAction(mode, { isRecordingShortcut = false } = {}) {
   if (isRecordingShortcut) return "cancel-recording";
-  if (mode === "reminder" || mode === "settings") return "close-overlay";
+  if (mode === "reminder" || mode === "settings" || mode === "delete") {
+    return "close-overlay";
+  }
   if (mode === "search") return "exit-search";
   return "hide-panel";
+}
+
+/// After removing `removedId`, pick the nearest remaining neighbor in the
+/// current stacked navigation order (prefer the item that slid into its place).
+export function selectionAfterDelete(tasks, removedId) {
+  const order = stackedNavigationOrder(tasks);
+  if (!order.length) return null;
+
+  const index = order.findIndex((task) => task.id === removedId);
+  if (index < 0) return order[0]?.id || null;
+
+  const remaining = order.filter((task) => task.id !== removedId);
+  if (!remaining.length) return null;
+  return remaining[Math.min(index, remaining.length - 1)]?.id || null;
 }
 
 /// Stacked layout: unfinished first, completed below. Search keeps the same

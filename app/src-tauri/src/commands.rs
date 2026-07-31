@@ -104,6 +104,11 @@ pub fn clear_reminder(id: String, state: State<'_, AppState>) -> Result<Task, St
 }
 
 #[tauri::command]
+pub fn delete_task(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    with_service(&state, |service| service.delete(&id))
+}
+
+#[tauri::command]
 pub fn get_global_shortcut(
     state: State<'_, SettingsState>,
 ) -> Result<GlobalShortcutStatus, String> {

@@ -55,6 +55,19 @@ impl TaskService {
         self.update_task(id, |task| task.reminder = None)
     }
 
+    pub fn delete(&mut self, id: &str) -> Result<(), String> {
+        let mut tasks = self.repository.tasks().to_vec();
+        let before = tasks.len();
+        tasks.retain(|task| task.id != id);
+        if tasks.len() == before {
+            return Err("找不到这项待办".to_string());
+        }
+        self.repository
+            .replace_and_save(tasks)
+            .map_err(to_message)?;
+        Ok(())
+    }
+
     pub fn replace_all(&mut self, tasks: Vec<Task>) -> Result<(), String> {
         self.repository.replace_and_save(tasks).map_err(to_message)
     }
@@ -150,5 +163,52 @@ mod tests {
         let error = service.set_reminder(&task.id, 5_000, Some(0)).unwrap_err();
 
         assert_eq!(error, "重复间隔必须大于 0 分钟");
+    }
+
+    #[test]
+    fn deletes_a_task_and_persists_the_remaining_list() {
+        let mut service = service();
+        let first = service.create("第一项", 100).expect("create first");
+        let second = service.create("第二项", 200).expect("create second");
+
+        service.delete(&first.id).expect("delete first");
+
+        let tasks = service.list();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, second.id);
+        assert_eq!(tasks[0].title, "第二项");
+    }
+
+    #[test]
+    fn delete_returns_a_missing_id_error_without_changing_storage() {
+        let mut service = service();
+        let task = service.create("仍在", 100).expect("create task");
+
+        let error = service.delete("missing-id").unwrap_err();
+
+        assert_eq!(error, "找不到这项待办");
+        assert_eq!(service.list().len(), 1);
+        assert_eq!(service.list()[0].id, task.id);
+    }
+
+    #[test]
+    fn deleting_a_task_also_removes_its_reminder() {
+        let mut service = service();
+        let task = service.create("带提醒", 100).expect("create task");
+        service
+            .set_reminder(&task.id, 5_000, Some(30))
+            .expect("set reminder");
+        let other = service.create("保留", 200).expect("create other");
+
+        service.delete(&task.id).expect("delete reminded task");
+
+        let tasks = service.list();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, other.id);
+        assert_eq!(tasks[0].reminder, None);
+        assert!(service
+            .list()
+            .iter()
+            .all(|candidate| candidate.id != task.id));
     }
 }

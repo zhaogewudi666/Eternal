@@ -113,6 +113,7 @@ pub fn run() {
             commands::list_tasks,
             commands::create_task,
             commands::toggle_task,
+            commands::delete_task,
             commands::set_reminder,
             commands::clear_reminder,
             commands::hide_panel,
