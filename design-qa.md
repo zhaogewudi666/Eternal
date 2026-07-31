@@ -1,45 +1,33 @@
-# Eternal Visual QA
+# Eternal Design QA
 
-**Status:** PASS
+Result: **passed**
 
-**Reference:** `design/references/native-dark-reference.png`  
-**Implementation state:** `artifacts/qa/eternal-dark-final-380x560.png`  
-**Combined comparison:** `artifacts/qa/native-reference-vs-implementation-final.png`
+## Comparison inputs
 
-## Comparison state
+- Reference: `design/references/native-dark-reference.png`
+- Implemented dark panel: `design/qa/implementation-dark.png`
+- Side-by-side review: `design/qa/reference-vs-implementation-dark.png`
 
-- Dark appearance
-- Quick-capture field focused
-- No lingering list-selection highlight while capture owns focus
-- Three active tasks
-- Completed group collapsed
-- Compact desktop panel at `380 × 560`
+## Verified visual criteria
 
-## Findings
+- Compact native-style header, persistent quick-capture field, dense task rows,
+  quiet borders, restrained radii, and system typography match the reference
+  direction.
+- Unfinished tasks render first. A clearly labeled `已完成` section follows in
+  the same scrollable panel, with quieter completed rows and strike-through
+  titles.
+- The 380 × 560 panel keeps search, settings, the task list, and keyboard help
+  visible without clipping.
+- Dark and light themes preserve the same hierarchy and spacing. Accent color
+  is limited to the Eternal mark, selection/completion, and actionable state.
+- Search, settings, theme switching, shortcut display, reminders, and the
+  stacked task sections were inspected in the local browser preview.
 
-- The implementation matches the reference's native direction: opaque neutral
-  surfaces, system typography, square checkboxes, compact rows, restrained
-  radii, and low-contrast separators.
-- The original blue-tinted selection and focus treatment was reduced to
-  neutral gray after the first comparison.
-- Icons come from Phosphor rather than handcrafted SVG or CSS art.
-- Both dark and light appearances were rendered and checked; the light theme
-  retains contrast and hierarchy without adding decorative effects.
-- Browser interaction checks covered capture after list navigation, completed
-  search/restore, settings focus, reminder focus, and hierarchical `Esc`; the
-  final production preview reported zero console errors.
-- The compact footer contains only keyboard guidance. The reference's bottom
-  navigation was intentionally omitted because Eternal has one unified
-  workflow and no additional pages.
+## Intentional differences from the reference
 
-## Intentional differences
-
-- Checkbox targets are slightly larger than the visual reference to preserve
-  desktop pointer and keyboard accessibility.
-- Search and appearance controls live in the header because they are part of
-  the agreed single-panel workflow.
-- Reminder metadata is shown inline only when a task has a reminder.
-
-No clipped controls, broken spacing, decorative gradients, glass effects,
-placeholder imagery, or inconsistent corner radii were found in the final
-comparison.
+- Eternal keeps its infinity/check brand instead of copying the reference
+  title and bottom navigation.
+- The desktop utility uses a shorter 380 × 560 window and a fixed keyboard-help
+  footer; the reference image is a taller mobile-like composition.
+- Completed titles use strike-through because completion by crossing an item
+  out is part of Eternal's requested behavior.

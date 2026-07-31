@@ -19,7 +19,18 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
   controls, and low decoration. Do not add glass blur, glow, marketing
   gradients, oversized cards, or AI-looking ornamental chrome.
 - Keep the product to capture, search, keyboard navigation, complete/restore,
-  reminders, completed history, and light/dark/system theme selection.
+  reminders, completed history, a configurable global shortcut, and
+  light/dark/system theme selection.
+- Unfinished and completed tasks share one scrollable panel: unfinished rows
+  first, then a clearly labeled `已完成` section below. There is no exclusive
+  todo/completed view and no top segmented switch. Capture stays available in
+  the normal panel. Search spans both sections and labels each result's state.
+  `CommandOrControl+1` / `CommandOrControl+2` jump selection between the
+  unfinished and completed sections without reintroducing exclusive views.
+- The global shortcut is validated, normalised, and rebound in Rust
+  (`src-tauri/src/shortcut.rs`); the frontend only captures and renders it.
+  A rebind is transactional: a rejected or conflicting combination must leave
+  the previously registered and persisted shortcut untouched.
 - Do not add accounts, sync, collaboration, AI, projects, tags, priorities,
   statistics, full calendar pages, autostart, telemetry, or update services.
 - macOS must remain usable from the menu bar without a Dock icon. Windows must

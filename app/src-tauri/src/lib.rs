@@ -4,19 +4,22 @@ pub mod platform;
 pub mod reminders;
 pub mod repository;
 pub mod service;
+pub mod settings;
+pub mod shortcut;
 pub mod window_position;
 
 use std::path::PathBuf;
 
-use commands::AppState;
+use commands::{AppState, SettingsState};
 use platform::{
-    cancel_focus_loss_hide, now_ms, save_panel_position, schedule_focus_loss_hide, setup_desktop,
-    toggle_panel, WindowState,
+    cancel_focus_loss_hide, hide_panel, now_ms, register_global_shortcut, schedule_focus_loss_hide,
+    setup_desktop, WindowState,
 };
 use repository::TaskRepository;
 use service::TaskService;
+use settings::SettingsRepository;
+use shortcut::RecordingGate;
 use tauri::Manager;
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -67,8 +70,33 @@ pub fn run() {
                     )
                 }
             };
+            let settings =
+                SettingsRepository::load_or_default(app.path().app_data_dir()?.join("settings.json"));
+            let stored_shortcut = settings.global_shortcut().to_string();
+
+            let active_shortcut =
+                match register_global_shortcut(app.handle(), &stored_shortcut) {
+                    Ok(()) => Some(stored_shortcut.clone()),
+                    Err(error) => {
+                        log::error!(
+                            "failed to register global shortcut {stored_shortcut}: {error}"
+                        );
+                        let _ = app
+                            .notification()
+                            .builder()
+                            .title("Eternal 快捷键不可用")
+                            .body(format!(
+                                "{stored_shortcut} 已被其他应用占用，仍可从状态栏打开 Eternal，或在设置中换一个组合。"
+                            ))
+                            .show();
+                        None
+                    }
+                };
+
             app.manage(AppState::new(TaskService::new(repository)));
+            app.manage(SettingsState::new(settings, active_shortcut));
             app.manage(WindowState::default());
+            app.manage(RecordingGate::default());
 
             if let Some(message) = recovery_message {
                 let _ = app
@@ -76,23 +104,6 @@ pub fn run() {
                     .builder()
                     .title("Eternal 已安全恢复")
                     .body(message)
-                    .show();
-            }
-
-            if let Err(error) = app.global_shortcut().on_shortcut(
-                "CommandOrControl+Shift+Space",
-                |app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        let _ = toggle_panel(app);
-                    }
-                },
-            ) {
-                log::error!("failed to register global shortcut: {error}");
-                let _ = app
-                    .notification()
-                    .builder()
-                    .title("Eternal 快捷键不可用")
-                    .body("⌘/Ctrl+Shift+Space 已被其他应用占用，仍可从状态栏打开 Eternal。")
                     .show();
             }
 
@@ -105,12 +116,14 @@ pub fn run() {
             commands::set_reminder,
             commands::clear_reminder,
             commands::hide_panel,
+            commands::get_global_shortcut,
+            commands::set_global_shortcut,
+            commands::set_shortcut_recording,
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                save_panel_position(window.app_handle());
-                let _ = window.hide();
+                let _ = hide_panel(window.app_handle());
             }
             tauri::WindowEvent::Focused(false) => schedule_focus_loss_hide(window.clone()),
             tauri::WindowEvent::Focused(true) => cancel_focus_loss_hide(window),

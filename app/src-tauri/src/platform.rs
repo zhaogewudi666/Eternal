@@ -5,11 +5,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Manager};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_window_state::{AppHandleExt, StateFlags, WindowExt};
 
 use crate::commands::AppState;
 use crate::reminders::collect_due;
+use crate::shortcut::{rebind, revert, RecordingGate, ShortcutBinder, ShortcutError};
 use crate::window_position::{clamp_to_visible, MonitorBounds, Point, Size};
 
 const REMINDER_POLL_INTERVAL: Duration = Duration::from_secs(15);
@@ -66,9 +68,41 @@ pub(crate) fn now_ms() -> Option<i64> {
 
 pub fn show_panel(app: &AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window("main") {
+        // macOS keeps the whole process hidden after `hide_panel`, so the window
+        // would stay invisible until the application itself is unhidden.
+        #[cfg(target_os = "macos")]
+        app.show()?;
         window.show()?;
         window.set_focus()?;
     }
+    Ok(())
+}
+
+/// Hides the panel without changing application activation. This is the safe
+/// path after the user has already focused another application.
+pub fn conceal_panel(app: &AppHandle) -> tauri::Result<()> {
+    let Some(window) = app.get_webview_window("main") else {
+        return Ok(());
+    };
+
+    save_panel_position(app);
+    window.hide()?;
+
+    if let Some(gate) = app.try_state::<RecordingGate>() {
+        gate.set_recording(false);
+    }
+
+    Ok(())
+}
+
+/// Hides the panel and, on macOS, hands the keyboard focus back to whichever
+/// application the user came from instead of leaving the menu bar app active.
+pub fn hide_panel(app: &AppHandle) -> tauri::Result<()> {
+    conceal_panel(app)?;
+
+    #[cfg(target_os = "macos")]
+    app.hide()?;
+
     Ok(())
 }
 
@@ -79,21 +113,84 @@ pub fn save_panel_position(app: &AppHandle) {
 }
 
 pub fn toggle_panel(app: &AppHandle) -> tauri::Result<()> {
-    if let Some(window) = app.get_webview_window("main") {
-        if window.is_visible()? {
-            save_panel_position(app);
-            window.hide()?;
-        } else {
-            window.show()?;
-            window.set_focus()?;
-        }
+    let Some(window) = app.get_webview_window("main") else {
+        return Ok(());
+    };
+
+    if window.is_visible()? {
+        hide_panel(app)
+    } else {
+        show_panel(app)
     }
-    Ok(())
 }
 
 fn toggle_panel_from_tray(app: &AppHandle) -> tauri::Result<()> {
     app.state::<WindowState>().cancel_auto_hide();
     toggle_panel(app)
+}
+
+/// Binds Eternal's panel toggle to an accelerator through the global shortcut
+/// plugin. The pure transaction lives in `shortcut::rebind`; this only performs
+/// the side effects it asks for.
+pub struct AppShortcutBinder<'a> {
+    app: &'a AppHandle,
+}
+
+impl<'a> AppShortcutBinder<'a> {
+    pub fn new(app: &'a AppHandle) -> Self {
+        Self { app }
+    }
+}
+
+impl ShortcutBinder for AppShortcutBinder<'_> {
+    fn register(&self, accelerator: &str) -> Result<(), String> {
+        self.app
+            .global_shortcut()
+            .on_shortcut(accelerator, |app, _shortcut, event| {
+                if event.state != ShortcutState::Pressed {
+                    return;
+                }
+                let recording = app
+                    .try_state::<RecordingGate>()
+                    .is_some_and(|gate| gate.is_recording());
+                if recording {
+                    return;
+                }
+                let _ = toggle_panel(app);
+            })
+            .map_err(|error| error.to_string())
+    }
+
+    fn unregister(&self, accelerator: &str) -> Result<(), String> {
+        self.app
+            .global_shortcut()
+            .unregister(accelerator)
+            .map_err(|error| error.to_string())
+    }
+}
+
+/// Swaps the live global shortcut, keeping `current` registered on any failure.
+pub fn apply_global_shortcut(
+    app: &AppHandle,
+    active: Option<&str>,
+    requested: &str,
+) -> Result<String, ShortcutError> {
+    rebind(&AppShortcutBinder::new(app), active, requested)
+}
+
+/// Restores the binding that was live before a successful rebind whose settings
+/// write later failed, and reports what is actually registered after recovery.
+pub fn revert_global_shortcut(
+    app: &AppHandle,
+    applied: &str,
+    previous: Option<&str>,
+) -> Option<String> {
+    revert(&AppShortcutBinder::new(app), applied, previous)
+}
+
+/// Claims the stored accelerator during startup, when nothing is registered yet.
+pub fn register_global_shortcut(app: &AppHandle, accelerator: &str) -> Result<(), String> {
+    AppShortcutBinder::new(app).register(accelerator)
 }
 
 pub fn schedule_focus_loss_hide(window: tauri::Window) {
@@ -108,8 +205,7 @@ pub fn schedule_focus_loss_hide(window: tauri::Window) {
             return;
         };
         if state.take_pending_auto_hide(token) {
-            save_panel_position(window.app_handle());
-            let _ = window.hide();
+            let _ = conceal_panel(window.app_handle());
         }
     });
 }

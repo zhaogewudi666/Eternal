@@ -4,7 +4,7 @@ import {
   Infinity,
   MagnifyingGlass,
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ReminderEditor } from "./components/ReminderEditor";
 import { SettingsPopover } from "./components/SettingsPopover";
@@ -13,25 +13,54 @@ import { TaskList } from "./components/TaskList";
 import {
   clearReminder,
   createTask,
+  getGlobalShortcut,
   hidePanel,
   listTasks,
+  setGlobalShortcut,
   setReminder,
+  setShortcutRecording,
   toggleTask,
 } from "./lib/tauri-bridge";
+import {
+  DEFAULT_SHORTCUT,
+  acceleratorFromEvent,
+  currentPlatform,
+  formatAccelerator,
+  isMacPlatform,
+} from "./model/shortcut";
 import {
   filterTasks,
   moveSelection,
   nextEscapeAction,
+  partitionStackedTasks,
+  sectionForShortcutKey,
+  stackedNavigationOrder,
 } from "./model/task-state";
 
 function replaceTask(tasks, updated) {
   return tasks.map((task) => (task.id === updated.id ? updated : task));
 }
 
+function normalizeShortcutStatus(value) {
+  if (typeof value === "string") {
+    return { accelerator: value, registered: Boolean(value) };
+  }
+
+  return {
+    accelerator: String(value?.accelerator || ""),
+    registered: Boolean(value?.registered),
+  };
+}
+
 function initialTheme() {
   const saved = window.localStorage.getItem("eternal.theme");
   return ["system", "light", "dark"].includes(saved) ? saved : "system";
 }
+
+const EMPTY_MESSAGES = {
+  active: "现在没有未完成的事情",
+  search: "没有匹配的任务",
+};
 
 export function App() {
   const [tasks, setTasks] = useState([]);
@@ -40,21 +69,44 @@ export function App() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [isListNavigating, setIsListNavigating] = useState(false);
-  const [completedOpen, setCompletedOpen] = useState(false);
   const [theme, setTheme] = useState(initialTheme);
   const [error, setError] = useState("");
+  const [shortcut, setShortcut] = useState(null);
+  const [shortcutError, setShortcutError] = useState("");
+  const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
   const inputRef = useRef(null);
+  const activeSectionRef = useRef(null);
+  const completedSectionRef = useRef(null);
+  const listScrollRef = useRef(null);
+
+  const platform = useMemo(() => currentPlatform(), []);
+  const isSearching = mode === "search";
+  const isCapturing = !isSearching;
 
   useEffect(() => {
     listTasks()
       .then((loadedTasks) => {
         setTasks(loadedTasks);
-        setSelectedId(
-          loadedTasks.find((task) => !task.completed)?.id || null,
-        );
+        setSelectedId(loadedTasks.find((task) => !task.completed)?.id || null);
       })
       .catch((reason) => setError(String(reason)));
   }, []);
+
+  useEffect(() => {
+    getGlobalShortcut()
+      .then((value) => {
+        const status = normalizeShortcutStatus(value);
+        setShortcut(status.accelerator);
+        if (!status.registered && status.accelerator) {
+          setShortcutError(
+            `${formatAccelerator(status.accelerator, platform)} 当前未生效，请录制新的组合。`,
+          );
+        }
+      })
+      .catch((reason) =>
+        setShortcutError(`无法读取全局快捷键：${String(reason)}`),
+      );
+  }, [platform]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -81,27 +133,26 @@ export function App() {
   }, [mode]);
 
   const filteredTasks = useMemo(
-    () => filterTasks(tasks, mode === "search" ? query : ""),
-    [mode, query, tasks],
+    () => filterTasks(tasks, isSearching ? query : ""),
+    [isSearching, query, tasks],
   );
-  const [activeTasks, completedTasks] = useMemo(
-    () => [
-      filteredTasks.filter((task) => !task.completed),
-      filteredTasks.filter((task) => task.completed),
-    ],
+  const { active: activeTasks, completed: completedTasks } = useMemo(
+    () => partitionStackedTasks(filteredTasks),
     [filteredTasks],
   );
-  const completedVisible = completedOpen || mode === "search";
   const navigableTasks = useMemo(
-    () =>
-      completedVisible ? [...activeTasks, ...completedTasks] : activeTasks,
-    [activeTasks, completedTasks, completedVisible],
+    () => stackedNavigationOrder(filteredTasks),
+    [filteredTasks],
+  );
+  const activeCount = useMemo(
+    () => tasks.filter((task) => !task.completed).length,
+    [tasks],
   );
   const selectedTask = tasks.find((task) => task.id === selectedId) || null;
 
   async function handleCreate() {
     const title = draft.trim();
-    if (!title) return;
+    if (!title || !isCapturing) return;
     try {
       const created = await createTask(title);
       setTasks((current) => [created, ...current]);
@@ -113,15 +164,104 @@ export function App() {
     }
   }
 
-  async function handleToggle(id) {
+  const handleToggle = useCallback(async (id) => {
     try {
       const updated = await toggleTask(id);
       setTasks((current) => replaceTask(current, updated));
+      // Stacked layout keeps both sections on one panel; stay on the same row.
       setSelectedId(updated.id);
     } catch (reason) {
       setError(String(reason));
     }
-  }
+  }, []);
+
+  const jumpToSection = useCallback((section) => {
+    setMode((current) => {
+      if (current === "search") setQuery("");
+      return current === "search" ? "normal" : current;
+    });
+
+    const pool =
+      section === "completed"
+        ? partitionStackedTasks(tasks).completed
+        : partitionStackedTasks(tasks).active;
+    const target = pool[0];
+    if (!target) return;
+
+    inputRef.current?.blur();
+    setSelectedId(target.id);
+    setIsListNavigating(true);
+
+    requestAnimationFrame(() => {
+      const node = document.querySelector(`[data-task-id="${target.id}"]`);
+      if (typeof node?.scrollIntoView === "function") {
+        node.scrollIntoView({ block: "nearest" });
+      }
+      const sectionNode =
+        section === "completed"
+          ? completedSectionRef.current
+          : activeSectionRef.current;
+      if (typeof sectionNode?.scrollIntoView === "function") {
+        sectionNode.scrollIntoView({ block: "nearest" });
+      }
+    });
+  }, [tasks]);
+
+  const stopRecording = useCallback(() => {
+    setIsRecordingShortcut(false);
+    setShortcutRecording(false).catch((reason) =>
+      setShortcutError(String(reason?.message || reason)),
+    );
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    setShortcutError("");
+    try {
+      await setShortcutRecording(true);
+      setIsRecordingShortcut(true);
+    } catch (reason) {
+      setIsRecordingShortcut(false);
+      setShortcutError(String(reason?.message || reason));
+    }
+  }, []);
+
+  const applyShortcut = useCallback(
+    async (accelerator) => {
+      stopRecording();
+      try {
+        const applied = await setGlobalShortcut(accelerator);
+        setShortcut(applied || accelerator);
+        setShortcutError("");
+      } catch (reason) {
+        try {
+          const status = normalizeShortcutStatus(await getGlobalShortcut());
+          setShortcut(status.accelerator);
+        } catch {
+          // Keep the last confirmed value when even the recovery read fails.
+        }
+        setShortcutError(String(reason?.message || reason));
+      }
+    },
+    [stopRecording],
+  );
+
+  const closeSettings = useCallback(() => {
+    if (isRecordingShortcut) stopRecording();
+    setMode("normal");
+  }, [isRecordingShortcut, stopRecording]);
+
+  useEffect(() => {
+    if (mode !== "settings" && isRecordingShortcut) stopRecording();
+  }, [isRecordingShortcut, mode, stopRecording]);
+
+  useEffect(() => {
+    function releaseRecordingOnBlur() {
+      if (isRecordingShortcut) stopRecording();
+    }
+
+    window.addEventListener("blur", releaseRecordingOnBlur);
+    return () => window.removeEventListener("blur", releaseRecordingOnBlur);
+  }, [isRecordingShortcut, stopRecording]);
 
   async function handleSaveReminder(nextAtMs, repeatEveryMinutes) {
     if (!selectedTask) return;
@@ -153,15 +293,10 @@ export function App() {
     function onKeyDown(event) {
       if (event.isComposing || event.keyCode === 229) return;
 
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
-        event.preventDefault();
-        setMode("search");
-        return;
-      }
-
       if (event.key === "Escape") {
         event.preventDefault();
-        const action = nextEscapeAction(mode);
+        const action = nextEscapeAction(mode, { isRecordingShortcut });
+        if (action === "cancel-recording") stopRecording();
         if (action === "close-overlay") setMode("normal");
         if (action === "exit-search") {
           setMode("normal");
@@ -171,11 +306,41 @@ export function App() {
         return;
       }
 
-      if (mode === "reminder" || mode === "settings") return;
+      if (isRecordingShortcut) {
+        event.preventDefault();
+        const accelerator = acceleratorFromEvent(event);
+        if (accelerator) applyShortcut(accelerator);
+        return;
+      }
 
-      const hasCommandModifier =
-        event.metaKey || event.ctrlKey || event.altKey;
-      if (hasCommandModifier) return;
+      const hasCommand = event.metaKey || event.ctrlKey;
+
+      if (mode === "reminder" || mode === "settings") {
+        const isApplicationCommand =
+          hasCommand &&
+          !event.altKey &&
+          !event.shiftKey &&
+          (event.key.toLowerCase() === "f" || sectionForShortcutKey(event.key));
+        if (isApplicationCommand) event.preventDefault();
+        return;
+      }
+
+      if (hasCommand && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        setMode("search");
+        return;
+      }
+
+      if (hasCommand && !event.altKey && !event.shiftKey) {
+        const section = sectionForShortcutKey(event.key);
+        if (section) {
+          event.preventDefault();
+          jumpToSection(section);
+          return;
+        }
+      }
+
+      if (hasCommand || event.altKey) return;
 
       const targetIsInteractive = /^(A|BUTTON|INPUT|SELECT|TEXTAREA)$/.test(
         event.target?.tagName || "",
@@ -206,7 +371,7 @@ export function App() {
       if (
         event.key.length === 1 &&
         event.key !== " " &&
-        (mode === "normal" || mode === "search")
+        (isSearching || isCapturing)
       ) {
         event.preventDefault();
         setIsListNavigating(false);
@@ -215,7 +380,7 @@ export function App() {
           event.shiftKey && /^[a-z]$/i.test(event.key)
             ? event.key.toUpperCase()
             : event.key;
-        if (mode === "search") {
+        if (isSearching) {
           setQuery((current) => current + character);
         } else {
           setDraft((current) => current + character);
@@ -247,7 +412,21 @@ export function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isListNavigating, mode, navigableTasks, selectedId]);
+  }, [
+    applyShortcut,
+    handleToggle,
+    isCapturing,
+    isListNavigating,
+    isRecordingShortcut,
+    isSearching,
+    jumpToSection,
+    mode,
+    navigableTasks,
+    selectedId,
+    stopRecording,
+  ]);
+
+  const modifierLabel = isMacPlatform(platform) ? "⌘" : "Ctrl+";
 
   return (
     <main className="app-shell">
@@ -263,9 +442,7 @@ export function App() {
           </span>
           <div className="brand-copy" data-tauri-drag-region>
             <h1 data-tauri-drag-region>Eternal</h1>
-            <p data-tauri-drag-region>
-              收集箱 · {tasks.filter((task) => !task.completed).length} 项未完成
-            </p>
+            <p data-tauri-drag-region>收集箱 · {activeCount} 项未完成</p>
           </div>
         </div>
         <div className="header-actions">
@@ -290,9 +467,9 @@ export function App() {
 
       <TaskComposer
         mode={mode}
-        value={mode === "search" ? query : draft}
+        value={isSearching ? query : draft}
         inputRef={inputRef}
-        onChange={mode === "search" ? setQuery : setDraft}
+        onChange={isSearching ? setQuery : setDraft}
         onSubmit={handleCreate}
         onExitSearch={() => {
           setMode("normal");
@@ -309,29 +486,41 @@ export function App() {
         </div>
       )}
 
-      <TaskList
-        activeTasks={activeTasks}
-        completedTasks={completedTasks}
-        selectedId={isListNavigating ? selectedId : null}
-        completedOpen={completedVisible}
-        completedLocked={mode === "search"}
-        onSelect={(id) => {
-          setSelectedId(id);
-          setIsListNavigating(true);
-        }}
-        onToggle={handleToggle}
-        onEditReminder={(id) => {
-          setSelectedId(id);
-          setMode("reminder");
-        }}
-        onToggleCompleted={() => setCompletedOpen((open) => !open)}
-      />
+      <div className="task-scroll" ref={listScrollRef}>
+        <TaskList
+          activeTasks={activeTasks}
+          completedTasks={completedTasks}
+          emptyActiveMessage={EMPTY_MESSAGES.active}
+          emptySearchMessage={EMPTY_MESSAGES.search}
+          selectedId={isListNavigating ? selectedId : null}
+          showStatus={isSearching}
+          isSearching={isSearching}
+          activeSectionRef={activeSectionRef}
+          completedSectionRef={completedSectionRef}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setIsListNavigating(true);
+          }}
+          onToggle={handleToggle}
+          onEditReminder={(id) => {
+            setSelectedId(id);
+            setMode("reminder");
+          }}
+        />
+      </div>
 
       {mode === "settings" && (
         <SettingsPopover
           theme={theme}
           onThemeChange={setTheme}
-          onClose={() => setMode("normal")}
+          onClose={closeSettings}
+          shortcutLabel={
+            shortcut === null ? "读取中…" : formatAccelerator(shortcut, platform)
+          }
+          shortcutError={shortcutError}
+          isRecordingShortcut={isRecordingShortcut}
+          onStartRecording={startRecording}
+          onResetShortcut={() => applyShortcut(DEFAULT_SHORTCUT)}
         />
       )}
 
@@ -345,7 +534,8 @@ export function App() {
       )}
 
       <footer className="shortcut-bar" aria-label="快捷键帮助">
-        <span>⌘/Ctrl+F 查找</span>
+        <span>{modifierLabel}1/2 分区</span>
+        <span>{modifierLabel}F 查找</span>
         <span>↑↓ 选择</span>
         <span>Space 完成</span>
         <span>Esc 关闭</span>

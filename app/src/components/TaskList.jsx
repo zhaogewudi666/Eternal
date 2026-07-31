@@ -1,9 +1,4 @@
-import {
-  BellSimple,
-  CaretRight,
-  Check,
-  Repeat,
-} from "@phosphor-icons/react";
+import { BellSimple, Check, Repeat } from "@phosphor-icons/react";
 
 function reminderLabel(reminder) {
   if (!reminder) return "";
@@ -18,7 +13,14 @@ function reminderLabel(reminder) {
   }).format(date);
 }
 
-function TaskRow({ task, selected, onSelect, onToggle, onEditReminder }) {
+function TaskRow({
+  task,
+  selected,
+  showStatus,
+  onSelect,
+  onToggle,
+  onEditReminder,
+}) {
   return (
     <div
       className={`task-row ${selected ? "is-selected" : ""} ${
@@ -38,6 +40,13 @@ function TaskRow({ task, selected, onSelect, onToggle, onEditReminder }) {
         {task.completed && <Check size={12} weight="bold" aria-hidden="true" />}
       </button>
       <span className="task-title">{task.title}</span>
+      {showStatus && (
+        <span
+          className={`task-status ${task.completed ? "is-completed" : ""}`}
+        >
+          {task.completed ? "已完成" : "待办"}
+        </span>
+      )}
       {task.reminder && (
         <button
           className="reminder-pill"
@@ -57,70 +66,109 @@ function TaskRow({ task, selected, onSelect, onToggle, onEditReminder }) {
   );
 }
 
-export function TaskList({
-  activeTasks,
-  completedTasks,
+function TaskSection({
+  tasks,
+  sectionId,
+  sectionRef,
+  heading,
+  emptyMessage,
   selectedId,
-  completedOpen,
-  completedLocked = false,
+  showStatus,
+  quiet,
   onSelect,
   onToggle,
   onEditReminder,
-  onToggleCompleted,
 }) {
+  if (!tasks.length && !emptyMessage) return null;
+
   return (
-    <section className="task-list" aria-label="待办列表">
+    <div
+      className={`task-section ${quiet ? "is-quiet" : ""}`}
+      data-section={sectionId}
+      ref={sectionRef}
+    >
+      {heading ? <h2 className="task-section-heading">{heading}</h2> : null}
       <div className="task-group">
-        {activeTasks.length ? (
-          activeTasks.map((task) => (
+        {tasks.length ? (
+          tasks.map((task) => (
             <TaskRow
               key={task.id}
               task={task}
               selected={selectedId === task.id}
+              showStatus={showStatus}
               onSelect={onSelect}
               onToggle={onToggle}
               onEditReminder={onEditReminder}
             />
           ))
         ) : (
-          <div className="empty-state">现在没有未完成的事情</div>
+          <div className="empty-state">{emptyMessage}</div>
         )}
       </div>
+    </div>
+  );
+}
 
-      {!!completedTasks.length && (
-        <div className="completed-section">
-          <button
-            className="completed-toggle"
-            type="button"
-            disabled={completedLocked}
-            aria-expanded={completedOpen}
-            aria-label={
-              completedLocked
-                ? "搜索到的已完成任务"
-                : `${completedOpen ? "隐藏" : "显示"}已完成任务`
-            }
-            onClick={onToggleCompleted}
-          >
-            <CaretRight
-              size={15}
-              className={completedOpen ? "is-open" : ""}
-            />
-            <span>已完成</span>
-            <span className="completed-count">{completedTasks.length}</span>
-          </button>
-          {completedOpen &&
-            completedTasks.map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                selected={selectedId === task.id}
-                onSelect={onSelect}
-                onToggle={onToggle}
-                onEditReminder={onEditReminder}
-              />
-            ))}
-        </div>
-      )}
+export function TaskList({
+  activeTasks,
+  completedTasks,
+  emptyActiveMessage,
+  emptySearchMessage,
+  selectedId,
+  showStatus = false,
+  isSearching = false,
+  activeSectionRef,
+  completedSectionRef,
+  onSelect,
+  onToggle,
+  onEditReminder,
+}) {
+  const hasAny = activeTasks.length > 0 || completedTasks.length > 0;
+
+  if (isSearching && !hasAny) {
+    return (
+      <section className="task-list" aria-label="搜索结果">
+        <div className="empty-state">{emptySearchMessage}</div>
+      </section>
+    );
+  }
+
+  if (!isSearching && !hasAny) {
+    return (
+      <section className="task-list" aria-label="任务列表">
+        <div className="empty-state">{emptyActiveMessage}</div>
+      </section>
+    );
+  }
+
+  return (
+    <section
+      className="task-list"
+      aria-label={isSearching ? "搜索结果" : "任务列表"}
+    >
+      <TaskSection
+        tasks={activeTasks}
+        sectionId="active"
+        sectionRef={activeSectionRef}
+        selectedId={selectedId}
+        showStatus={showStatus}
+        quiet={false}
+        onSelect={onSelect}
+        onToggle={onToggle}
+        onEditReminder={onEditReminder}
+      />
+      <TaskSection
+        tasks={completedTasks}
+        sectionId="completed"
+        sectionRef={completedSectionRef}
+        heading={completedTasks.length ? "已完成" : null}
+        selectedId={selectedId}
+        showStatus={showStatus}
+        quiet
+        onSelect={onSelect}
+        onToggle={onToggle}
+        onEditReminder={onEditReminder}
+      />
     </section>
   );
 }
