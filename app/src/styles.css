@@ -4,7 +4,7 @@
     -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei UI",
     sans-serif;
   font-synthesis: none;
-  /* Warmer neutrals + soft periwinkle / lavender-blush accents */
+  /* Warm, restrained light palette. Dark mode has its own native macOS tokens. */
   --color-bg: #f4f2f6;
   --color-surface: #fffcfe;
   --color-surface-hover: #f3eef5;
@@ -23,40 +23,40 @@
 }
 
 :root[data-theme="dark"] {
-  --color-bg: #1d1a20;
-  --color-surface: #2a2530;
-  --color-surface-hover: #322c38;
-  --color-selected: #353040;
-  --color-border: #433c4a;
-  --color-text: #f4eef5;
-  --color-secondary: #b3a9b8;
-  --color-muted: #918896;
-  --color-accent: #9aa0ea;
-  --color-accent-soft: #5a5680;
-  --color-blush: #5a4450;
-  --color-success: #3dba6e;
-  --color-reminder: #e0a85c;
-  --color-overdue: #ff6b78;
-  --panel-shadow: 0 16px 38px rgb(0 0 0 / 0.36);
+  --color-bg: #1c1c1e;
+  --color-surface: #2c2c2e;
+  --color-surface-hover: #3a3a3c;
+  --color-selected: #323234;
+  --color-border: #3a3a3c;
+  --color-text: #f2f2f7;
+  --color-secondary: #aeaeb2;
+  --color-muted: #8e8e93;
+  --color-accent: #0a84ff;
+  --color-accent-soft: #254f7c;
+  --color-blush: #3a3a3c;
+  --color-success: #30d158;
+  --color-reminder: #ff9f0a;
+  --color-overdue: #ff453a;
+  --panel-shadow: 0 16px 38px rgb(0 0 0 / 0.46);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-bg: #1d1a20;
-    --color-surface: #2a2530;
-    --color-surface-hover: #322c38;
-    --color-selected: #353040;
-    --color-border: #433c4a;
-    --color-text: #f4eef5;
-    --color-secondary: #b3a9b8;
-    --color-muted: #918896;
-    --color-accent: #9aa0ea;
-    --color-accent-soft: #5a5680;
-    --color-blush: #5a4450;
-    --color-success: #3dba6e;
-    --color-reminder: #e0a85c;
-    --color-overdue: #ff6b78;
-    --panel-shadow: 0 16px 38px rgb(0 0 0 / 0.36);
+    --color-bg: #1c1c1e;
+    --color-surface: #2c2c2e;
+    --color-surface-hover: #3a3a3c;
+    --color-selected: #323234;
+    --color-border: #3a3a3c;
+    --color-text: #f2f2f7;
+    --color-secondary: #aeaeb2;
+    --color-muted: #8e8e93;
+    --color-accent: #0a84ff;
+    --color-accent-soft: #254f7c;
+    --color-blush: #3a3a3c;
+    --color-success: #30d158;
+    --color-reminder: #ff9f0a;
+    --color-overdue: #ff453a;
+    --panel-shadow: 0 16px 38px rgb(0 0 0 / 0.46);
   }
 }
 
@@ -69,13 +69,14 @@ body {
   min-width: 320px;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
-  background: var(--color-bg);
+  background: transparent;
   color: var(--color-text);
   overflow: hidden;
 }
 
 #root {
   min-height: 100vh;
+  background: transparent;
 }
 
 button,
@@ -99,7 +100,7 @@ button {
   grid-template-rows: 58px 56px minmax(0, 1fr) 38px;
   background: var(--color-bg);
   border: 1px solid color-mix(in srgb, var(--color-border), transparent 12%);
-  border-radius: 13px;
+  border-radius: 14px;
   box-shadow: var(--panel-shadow);
 }
 

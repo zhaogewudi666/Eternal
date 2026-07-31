@@ -14,9 +14,11 @@ Eternal 应当像操作系统自带的小工具，而不是网页仪表盘或 AI
 
 - 使用系统字体，不加载品牌展示字体。
 - 不使用玻璃模糊、发光、彩色渐变、3D 卡片或大面积阴影。
-- 面板、输入框和任务行采用低对比度层级与克制圆角。
+- 面板、输入框和任务行采用低对比度层级与克制圆角；无边框原生窗口和页面画布
+  保持透明，让最外层 `14 px` 圆角真正裁掉四角，而不是露出矩形底色。
 - 一屏维持紧凑密度；任务行高约 `42–44 px`，主要间距使用 `8 / 12 / 16 px`。
-- 交互强调色保持克制的 dusk-indigo / 系统蓝；提醒、逾期、完成状态按语义
+- 浅色交互强调色保持克制的 dusk-indigo；深色使用 macOS 系统蓝与中性黑灰，
+  不使用紫色染色。提醒、逾期、完成状态按语义
   使用琥珀、红、绿。已完成行整体更安静（弱化字重与对比）。
 - 图标使用平台感较强的线性图标库，不用 emoji、字符图标或手绘 SVG。
 - 浅色和深色共享几何结构，但分别调色。
@@ -39,20 +41,20 @@ Eternal 应当像操作系统自带的小工具，而不是网页仪表盘或 AI
 - 删除需经确认层：`Enter` 确认，`Esc` 取消；不提供撤销箱或批量删除。
 - 不复制参考图的底部三栏导航。
 
-## Dark Tokens (0.2.1 warmer neutrals + soft periwinkle)
+## Dark Tokens (macOS native neutral black)
 
-- `--color-bg`: `#1D1A20`
-- `--color-surface`: `#2A2530`
-- `--color-surface-hover`: `#322C38`
-- `--color-selected`: `#353040`
-- `--color-border`: `#433C4A`
-- `--color-text`: `#F4EEF5`
-- `--color-text-secondary`: `#B3A9B8`
-- `--color-text-muted`: `#918896`
-- `--color-accent`: `#9AA0EA`
-- `--color-success`: `#3DBA6E`
-- `--color-reminder`: `#E0A85C`
-- `--color-overdue`: `#FF6B78`
+- `--color-bg`: `#1C1C1E`
+- `--color-surface`: `#2C2C2E`
+- `--color-surface-hover`: `#3A3A3C`
+- `--color-selected`: `#323234`
+- `--color-border`: `#3A3A3C`
+- `--color-text`: `#F2F2F7`
+- `--color-text-secondary`: `#AEAEB2`
+- `--color-text-muted`: `#8E8E93`
+- `--color-accent`: `#0A84FF`
+- `--color-success`: `#30D158`
+- `--color-reminder`: `#FF9F0A`
+- `--color-overdue`: `#FF453A`
 
 ## Light Tokens (0.2.1 warmer neutrals + soft periwinkle)
 

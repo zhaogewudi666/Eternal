@@ -18,6 +18,10 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - Prefer system fonts, compact neutral surfaces, restrained radii, native
   controls, and low decoration. Do not add glass blur, glow, marketing
   gradients, oversized cards, or AI-looking ornamental chrome.
+- Keep the outer frameless window genuinely rounded by preserving the
+  transparent native window and transparent page canvas. Dark mode uses
+  macOS-native neutral black/gray surfaces and system semantic colors; do not
+  introduce a purple tint into dark UI surfaces or selection states.
 - Keep the product to capture, search, keyboard navigation, complete/restore,
   reminders, confirmed task deletion, completed history, a configurable global
   shortcut, and light/dark/system theme selection.

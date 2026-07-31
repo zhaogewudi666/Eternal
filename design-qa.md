@@ -37,7 +37,9 @@ Secondary structural HTML (non-authoritative for pixels):
 - **Light selected**: selected unfinished row gains a soft lavender selection fill; footer becomes context-aware (`Enter 提醒`, `⌫ 删除`).
 - **Reminder**: popover editor over the list with title, datetime, repeat, and save/remove actions; list and footer remain in the same panel.
 - **Delete confirmation (post-fix)**: dialog titled `删除任务` with description only in the header and bottom actions **exactly** `取消` + `删除` (no top-right cancel, no `保留`). Autofocus on `删除`; footer `Enter 确认删除` / `Esc 取消`. No clipping at 380×560. Modal semantics: `role="dialog"`, `aria-modal="true"`.
-- **Dark default**: same hierarchy and spacing on warmer dusk neutrals with periwinkle accents; reminder metadata and completed quieting remain readable.
+- **Dark default (historical 0.2.1 capture)**: same hierarchy and spacing on the
+  former warmer dusk palette. The later native-black follow-up below supersedes
+  its color tokens while preserving the captured geometry and interaction states.
 
 ## Full comparison
 
@@ -84,13 +86,36 @@ After simplifying the dialog:
 
 - Reminder affordance: always-on `.reminder-control`; search and completed rows keep it.
 - Delete path: Rust `delete` + `delete_task` command + frontend bridge; confirmation required before persist; deleting removes any reminder with the task.
-- Visual tokens: warmer neutrals + soft periwinkle/lavender-blush accents; no gradients, glass blur, glow, hearts, flowers, or decorative AI chrome.
+- Visual tokens in the captured 0.2.1 set used warmer neutrals and soft
+  periwinkle. The native-black follow-up supersedes the dark tokens; light mode
+  keeps its restrained warm palette. No gradients, glass blur, glow, hearts,
+  flowers, or decorative AI chrome.
 - Phosphor icons and Eternal infinity/check brand preserved.
 
 ## Out of scope for this QA pass
 
 - Platform-native installation / Gatekeeper / SmartScreen / tray behavior on physical devices was **not** claimed.
 - Official macOS DMG packaging is performed by the integrator outside the worker sandbox (`hdiutil create` blocked here). Fallback ISO DMG is not recreated in finalization.
+
+## 2026-08-01 native-black and outer-corner follow-up
+
+- Root cause: `.app-shell` already clipped its contents, but the native Tauri
+  window was opaque and `body` painted the full rectangular canvas. The CSS
+  radius therefore could not remove the four native window corners.
+- Native boundary: the main window is now transparent, macOS private window
+  transparency is enabled, and the Tauri dependency opts into
+  `macos-private-api`. `body` and `#root` remain transparent while `.app-shell`
+  owns the visible background and a `14 px` clipped radius.
+- Dark runtime tokens now resolve to macOS-style neutral values:
+  `#1C1C1E` background, `#2C2C2E` surface, `#0A84FF` accent, plus system
+  semantic green/orange/red. Purple tint is absent from dark surfaces,
+  selections, and focus accents.
+- Browser runtime inspection confirmed transparent page canvas, `14 px` shell
+  radius, and the expected dark token values. `npm run tauri build -- --bundles
+  app --no-sign` produced the macOS application successfully with the native
+  transparency feature enabled.
+- Physical macOS/Windows window-compositor appearance remains a real-device
+  acceptance check; this follow-up does not claim that user-run install test.
 
 ## History
 
