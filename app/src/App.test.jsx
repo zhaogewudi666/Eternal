@@ -15,6 +15,18 @@ const bridge = vi.hoisted(() => ({
   getGlobalShortcut: vi.fn(),
   setGlobalShortcut: vi.fn(),
   setShortcutRecording: vi.fn(),
+  isAutostartEnabled: vi.fn(),
+  enableAutostart: vi.fn(),
+  disableAutostart: vi.fn(),
+  subscribePanelShown: vi.fn((handler) => {
+    bridge._panelShownHandler = handler;
+    return () => {
+      if (bridge._panelShownHandler === handler) {
+        bridge._panelShownHandler = null;
+      }
+    };
+  }),
+  _panelShownHandler: null,
 }));
 
 vi.mock("./lib/tauri-bridge", () => bridge);
@@ -93,6 +105,18 @@ describe("Eternal task panel", () => {
     });
     bridge.setGlobalShortcut.mockImplementation(async (accelerator) => accelerator);
     bridge.setShortcutRecording.mockResolvedValue(undefined);
+    bridge.isAutostartEnabled.mockResolvedValue(false);
+    bridge.enableAutostart.mockResolvedValue(undefined);
+    bridge.disableAutostart.mockResolvedValue(undefined);
+    bridge._panelShownHandler = null;
+    bridge.subscribePanelShown.mockImplementation((handler) => {
+      bridge._panelShownHandler = handler;
+      return () => {
+        if (bridge._panelShownHandler === handler) {
+          bridge._panelShownHandler = null;
+        }
+      };
+    });
   });
 
   afterEach(() => {
@@ -254,8 +278,9 @@ describe("Eternal task panel", () => {
       render(<App />);
       await screen.findByText("核对客户名单");
 
-      // selectedId already starts on first unfinished; first ArrowDown moves to second-active.
-      await user.keyboard("{ArrowDown} ");
+      // ArrowDown enters the first unfinished row; a second ArrowDown reaches
+      // second-active so completing it selects the next unfinished neighbor.
+      await user.keyboard("{ArrowDown}{ArrowDown} ");
 
       expect(bridge.toggleTask).toHaveBeenCalledWith("second-active");
       await waitFor(() => {
@@ -283,7 +308,7 @@ describe("Eternal task panel", () => {
       render(<App />);
       await screen.findByText("核对客户名单");
 
-      await user.keyboard("{ArrowDown} ");
+      await user.keyboard("{ArrowDown}{ArrowDown} ");
 
       expect(bridge.toggleTask).toHaveBeenCalledWith("second-active");
       await waitFor(() => {
@@ -700,7 +725,8 @@ describe("Eternal task panel", () => {
 
     await user.keyboard("{ArrowDown} ");
 
-    expect(bridge.toggleTask).toHaveBeenLastCalledWith("active");
+    // ArrowDown enters the first unfinished row (the just-created capture).
+    expect(bridge.toggleTask).toHaveBeenLastCalledWith("new");
   });
 
   it("moves focus into settings instead of returning it to the composer", async () => {
@@ -721,7 +747,7 @@ describe("Eternal task panel", () => {
     render(<App />);
     await screen.findByRole("textbox", { name: "添加任务" });
 
-    await user.keyboard("{ArrowDown}{Enter}");
+    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
     const editor = screen.getByRole("region", { name: "编辑提醒" });
     expect(editor.textContent).toContain("核对客户名单");
 
@@ -782,6 +808,106 @@ describe("Eternal task panel", () => {
     expect(bridge.toggleTask).not.toHaveBeenCalled();
   });
 
+  describe("uninterrupted keyboard capture/search flow", () => {
+    it("enters the list on the first unfinished task with ArrowDown from capture", async () => {
+      const user = userEvent.setup();
+      bridge.listTasks.mockResolvedValueOnce([activeTask, secondActiveTask]);
+      render(<App />);
+      const composer = await screen.findByRole("textbox", { name: "添加任务" });
+
+      await user.keyboard("{ArrowDown}");
+
+      expect(document.activeElement).not.toBe(composer);
+      expect(
+        document.querySelector(".task-row.is-selected")?.textContent,
+      ).toContain("提交周报");
+    });
+
+    it("exits list navigation with ArrowUp from the first row back to capture", async () => {
+      const user = userEvent.setup();
+      bridge.listTasks.mockResolvedValueOnce([activeTask, secondActiveTask]);
+      render(<App />);
+      const composer = await screen.findByRole("textbox", { name: "添加任务" });
+
+      await user.keyboard("{ArrowDown}{ArrowUp}");
+
+      expect(document.activeElement).toBe(composer);
+      expect(document.querySelector(".task-row.is-selected")).toBeNull();
+    });
+
+    it("does not wrap ArrowDown past the last visible row", async () => {
+      const user = userEvent.setup();
+      bridge.listTasks.mockResolvedValueOnce([activeTask, secondActiveTask]);
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}");
+
+      expect(
+        document.querySelector(".task-row.is-selected")?.textContent,
+      ).toContain("核对客户名单");
+    });
+
+    it("opens search with plain / outside an editable control without inserting the slash", async () => {
+      const user = userEvent.setup();
+      bridge.listTasks.mockResolvedValueOnce([activeTask, secondActiveTask]);
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      await user.keyboard("{ArrowDown}/");
+
+      const search = await screen.findByRole("searchbox", { name: "搜索待办" });
+      expect(document.activeElement).toBe(search);
+      expect(search.value).toBe("");
+      expect(screen.queryByRole("textbox", { name: "添加任务" })).toBeNull();
+    });
+
+    it("still inserts / while typing in the capture field", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      const composer = await screen.findByRole("textbox", { name: "添加任务" });
+
+      await user.type(composer, "a/b");
+
+      expect(composer.value).toBe("a/b");
+      expect(screen.queryByRole("searchbox", { name: "搜索待办" })).toBeNull();
+    });
+
+    it("returns ArrowUp from the first search result to the search field", async () => {
+      const user = userEvent.setup();
+      bridge.listTasks.mockResolvedValueOnce([
+        activeTask,
+        secondActiveTask,
+        completedTask,
+      ]);
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+      const search = await screen.findByRole("searchbox", { name: "搜索待办" });
+      await user.type(search, "提");
+      await user.keyboard("{ArrowDown}{ArrowUp}");
+
+      expect(document.activeElement).toBe(search);
+      expect(document.querySelector(".task-row.is-selected")).toBeNull();
+    });
+
+    it("inserts spontaneous typing into search after leaving a selected result", async () => {
+      const user = userEvent.setup();
+      bridge.listTasks.mockResolvedValueOnce([activeTask, secondActiveTask]);
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+      const search = await screen.findByRole("searchbox", { name: "搜索待办" });
+      await user.keyboard("{ArrowDown}z");
+
+      expect(document.activeElement).toBe(search);
+      expect(search.value).toContain("z");
+      expect(document.querySelector(".task-row.is-selected")).toBeNull();
+    });
+  });
+
   it("falls back to system appearance when saved theme data is invalid", async () => {
     const user = userEvent.setup();
     window.localStorage.setItem("eternal.theme", "pink");
@@ -840,7 +966,7 @@ describe("Eternal task panel", () => {
       render(<App />);
       await screen.findByText("核对客户名单");
 
-      await user.keyboard("{ArrowDown}{Enter}");
+      await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
 
       expect(screen.getByRole("region", { name: "编辑提醒" }).textContent).toContain(
         "核对客户名单",
@@ -881,8 +1007,9 @@ describe("Eternal task panel", () => {
 
       const footer = screen.getByLabelText("快捷键帮助");
       expect(footer.textContent).toContain("Enter 添加");
+      expect(footer.textContent).toContain("↓ 列表");
+      expect(footer.textContent).toContain("/ 搜索");
       expect(footer.textContent).toContain("Ctrl+1/2 分区");
-      expect(footer.textContent).toContain("Ctrl+F 查找");
       expect(footer.textContent).not.toContain("Enter 提醒");
       expect(footer.textContent).not.toContain("⌫ 删除");
       expect(footer.textContent).not.toMatch(/Space 完成(?!\/恢复)/);
@@ -899,8 +1026,9 @@ describe("Eternal task panel", () => {
       expect(footer.textContent).toContain("Space 完成/恢复");
       expect(footer.textContent).toContain("Enter 提醒");
       expect(footer.textContent).toContain("⌫ 删除");
+      expect(footer.textContent).toContain("↑ 输入");
       expect(footer.textContent).not.toContain("Enter 添加");
-      expect(footer.textContent).not.toContain("Ctrl+F");
+      expect(footer.textContent).not.toContain("/ 搜索");
     });
 
     it("shows reminder, delete, settings, search, and recording-only footers", async () => {
@@ -931,21 +1059,28 @@ describe("Eternal task panel", () => {
       fireEvent.keyDown(window, { key: "f", ctrlKey: true });
       footer = screen.getByLabelText("快捷键帮助");
       expect(footer.textContent).toContain("Esc 退出搜索");
-      expect(footer.textContent).toContain("Space 完成/恢复");
-      expect(footer.textContent).not.toMatch(/(?:^|[^/])Space 完成(?!\/恢复)/);
+      expect(footer.textContent).toContain("↓ 结果");
+      // Search input-state must not advertise Space before a result is selected.
+      expect(footer.textContent).not.toContain("Space 完成/恢复");
       expect(footer.textContent).not.toContain("Enter 添加");
+
+      await user.keyboard("{ArrowDown}");
+      footer = screen.getByLabelText("快捷键帮助");
+      expect(footer.textContent).toContain("Space 完成/恢复");
     });
 
-    it("uses complete/restore wording in search because results span both sections", async () => {
+    it("uses complete/restore wording once a search result is selected", async () => {
+      const user = userEvent.setup();
       render(<App />);
       await screen.findByText("提交周报");
 
       fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+      await user.keyboard("{ArrowDown}");
       const footer = screen.getByLabelText("快捷键帮助");
       // Search hits unfinished and completed rows; "Space 完成" alone is wrong.
       expect(footer.textContent).toContain("Space 完成/恢复");
       expect(footer.textContent).not.toMatch(/(?:^|[^/])Space 完成(?!\/恢复)/);
-      expect(footer.textContent).toContain("↑↓ 选择");
+      expect(footer.textContent).toContain("↑ 搜索");
       expect(footer.textContent).toContain("Esc 退出搜索");
     });
 
@@ -956,7 +1091,8 @@ describe("Eternal task panel", () => {
 
       const footer = screen.getByLabelText("快捷键帮助");
       expect(footer.textContent).toContain("⌘1/2 分区");
-      expect(footer.textContent).toContain("⌘F 查找");
+      expect(footer.textContent).toContain("/ 搜索");
+      expect(footer.textContent).toContain("↓ 列表");
     });
   });
 
@@ -1378,6 +1514,578 @@ describe("Eternal task panel", () => {
         expect(screen.getByRole("alert").textContent).toContain("找不到这项待办");
       });
       expect(screen.getByText("提交周报")).toBeTruthy();
+    });
+  });
+
+  describe("autostart settings", () => {
+    it("loads the current OS autostart state when settings opens", async () => {
+      bridge.isAutostartEnabled.mockResolvedValue(true);
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      expect(bridge.isAutostartEnabled).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+
+      const toggle = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      await waitFor(() => {
+        expect(toggle.checked).toBe(true);
+      });
+      expect(bridge.isAutostartEnabled).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the switch off by default when OS reports disabled", async () => {
+      bridge.isAutostartEnabled.mockResolvedValue(false);
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+
+      const toggle = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      await waitFor(() => {
+        expect(toggle.checked).toBe(false);
+        expect(toggle.disabled).toBe(false);
+      });
+    });
+
+    it("commits the switch only after a successful enable", async () => {
+      let resolveEnable;
+      bridge.enableAutostart.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveEnable = resolve;
+          }),
+      );
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+      const toggle = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      await waitFor(() => expect(toggle.disabled).toBe(false));
+
+      await user.click(toggle);
+      expect(bridge.enableAutostart).toHaveBeenCalledTimes(1);
+      expect(toggle.checked).toBe(false);
+      expect(toggle.disabled).toBe(true);
+
+      resolveEnable();
+      await waitFor(() => {
+        expect(toggle.checked).toBe(true);
+        expect(toggle.disabled).toBe(false);
+      });
+    });
+
+    it("retains the previous state and shows an inline error when enable fails", async () => {
+      bridge.enableAutostart.mockRejectedValueOnce(new Error("系统拒绝注册"));
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+      const toggle = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      await waitFor(() => expect(toggle.disabled).toBe(false));
+
+      await user.click(toggle);
+
+      await waitFor(() => {
+        expect(toggle.checked).toBe(false);
+        expect(toggle.disabled).toBe(false);
+      });
+      const autostart = screen.getByRole("region", { name: "开机启动" });
+      expect(autostart.querySelector('[role="status"]')?.textContent).toContain(
+        "系统拒绝注册",
+      );
+    });
+
+    it("blocks duplicate concurrent autostart toggles while pending", async () => {
+      let resolveEnable;
+      bridge.enableAutostart.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveEnable = resolve;
+          }),
+      );
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+      const toggle = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      await waitFor(() => expect(toggle.disabled).toBe(false));
+
+      await user.click(toggle);
+      await user.click(toggle);
+      fireEvent.change(toggle, { target: { checked: true } });
+
+      expect(bridge.enableAutostart).toHaveBeenCalledTimes(1);
+      resolveEnable();
+      await waitFor(() => expect(toggle.checked).toBe(true));
+    });
+
+    it("reaches the switch by Tab and toggles with Space", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+      const toggle = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      await waitFor(() => expect(toggle.disabled).toBe(false));
+
+      toggle.focus();
+      expect(document.activeElement).toBe(toggle);
+      await user.keyboard(" ");
+
+      await waitFor(() => {
+        expect(bridge.enableAutostart).toHaveBeenCalledTimes(1);
+        expect(toggle.checked).toBe(true);
+      });
+    });
+
+    it("closes settings with Escape and restores capture focus", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      const composer = await screen.findByRole("textbox", { name: "添加任务" });
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+      await screen.findByRole("switch", { name: "开机时启动 Eternal" });
+
+      fireEvent.keyDown(window, { key: "Escape" });
+
+      expect(screen.queryByRole("region", { name: "设置" })).toBeNull();
+      await waitFor(() => {
+        expect(document.activeElement).toBe(composer);
+      });
+    });
+
+    it("preserves pending across close/reopen and only issues one OS enable", async () => {
+      let resolveEnable;
+      bridge.enableAutostart.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveEnable = resolve;
+          }),
+      );
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+      const toggle = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      await waitFor(() => expect(toggle.disabled).toBe(false));
+
+      await user.click(toggle);
+      expect(bridge.enableAutostart).toHaveBeenCalledTimes(1);
+      expect(toggle.disabled).toBe(true);
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByRole("region", { name: "设置" })).toBeNull();
+
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+      const reopened = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      expect(reopened.disabled).toBe(true);
+      expect(reopened.checked).toBe(false);
+      expect(bridge.enableAutostart).toHaveBeenCalledTimes(1);
+      // Pending open must not kick a fresh is-enabled read that fabricates state.
+      expect(bridge.isAutostartEnabled).toHaveBeenCalledTimes(1);
+
+      resolveEnable();
+      await waitFor(() => {
+        expect(reopened.checked).toBe(true);
+        expect(reopened.disabled).toBe(false);
+      });
+    });
+
+    it("does not render an operable off switch while autostart state is loading", async () => {
+      let resolveRead;
+      bridge.isAutostartEnabled.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveRead = resolve;
+          }),
+      );
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+
+      const region = await screen.findByRole("region", { name: "开机启动" });
+      expect(
+        screen.queryByRole("switch", { name: "开机时启动 Eternal" }),
+      ).toBeNull();
+      expect(region.querySelector('[role="switch"]')).toBeNull();
+      expect(
+        region.querySelector('input[type="checkbox"][aria-checked="false"]'),
+      ).toBeNull();
+      expect(region.querySelector('[role="status"]')?.textContent).toMatch(
+        /读取|加载|状态/,
+      );
+
+      resolveRead(true);
+      const toggle = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      await waitFor(() => {
+        expect(toggle.checked).toBe(true);
+        expect(toggle.disabled).toBe(false);
+      });
+    });
+
+    it("keeps unknown state and offers retry when OS read fails", async () => {
+      bridge.isAutostartEnabled
+        .mockRejectedValueOnce(new Error("插件不可用"))
+        .mockResolvedValueOnce(true);
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+
+      const region = await screen.findByRole("region", { name: "开机启动" });
+      await waitFor(() => {
+        expect(region.querySelector('[role="status"]')?.textContent).toContain(
+          "插件不可用",
+        );
+      });
+      // Unknown/error must not present a false/off switch.
+      expect(
+        screen.queryByRole("switch", { name: "开机时启动 Eternal" }),
+      ).toBeNull();
+      expect(
+        region.querySelector('input[type="checkbox"][aria-checked="false"]'),
+      ).toBeNull();
+      expect(region.querySelector('[aria-checked="false"]')).toBeNull();
+
+      await user.click(
+        screen.getByRole("button", { name: "重试读取开机启动状态" }),
+      );
+      const toggle = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      await waitFor(() => {
+        expect(toggle.checked).toBe(true);
+        expect(toggle.disabled).toBe(false);
+      });
+      expect(bridge.isAutostartEnabled).toHaveBeenCalledTimes(2);
+    });
+
+    it("commits disable only after success and rolls back on failure", async () => {
+      bridge.isAutostartEnabled.mockResolvedValue(true);
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+      const toggle = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      await waitFor(() => {
+        expect(toggle.checked).toBe(true);
+        expect(toggle.disabled).toBe(false);
+      });
+
+      bridge.disableAutostart.mockRejectedValueOnce(new Error("注销失败"));
+      await user.click(toggle);
+      await waitFor(() => {
+        expect(toggle.checked).toBe(true);
+        expect(toggle.disabled).toBe(false);
+      });
+      expect(
+        screen.getByRole("region", { name: "开机启动" }).querySelector(
+          '[role="status"]',
+        )?.textContent,
+      ).toContain("注销失败");
+
+      bridge.disableAutostart.mockResolvedValueOnce(undefined);
+      await user.click(toggle);
+      await waitFor(() => {
+        expect(toggle.checked).toBe(false);
+        expect(bridge.disableAutostart).toHaveBeenCalled();
+      });
+    });
+
+    it("toggles with Enter via the same transaction and keeps Space native", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+      const toggle = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      await waitFor(() => expect(toggle.disabled).toBe(false));
+
+      toggle.focus();
+      fireEvent.keyDown(toggle, { key: "Enter" });
+      await waitFor(() => {
+        expect(bridge.enableAutostart).toHaveBeenCalledTimes(1);
+        expect(toggle.checked).toBe(true);
+      });
+
+      // Space uses native checkbox semantics (change), not a second custom path.
+      await user.keyboard(" ");
+      await waitFor(() => {
+        expect(bridge.disableAutostart).toHaveBeenCalledTimes(1);
+        expect(toggle.checked).toBe(false);
+      });
+    });
+
+    it("reaches the switch with Tab and Shift+Tab without double activation", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+      const toggle = await screen.findByRole("switch", {
+        name: "开机时启动 Eternal",
+      });
+      await waitFor(() => expect(toggle.disabled).toBe(false));
+
+      const complete = screen.getByRole("button", { name: "完成" });
+      complete.focus();
+      await user.tab();
+      // Theme radios + shortcut controls then the switch.
+      let guard = 0;
+      while (document.activeElement !== toggle && guard < 12) {
+        await user.tab();
+        guard += 1;
+      }
+      expect(document.activeElement).toBe(toggle);
+
+      await user.tab({ shift: true });
+      expect(document.activeElement).not.toBe(toggle);
+      expect(bridge.enableAutostart).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("keyboard boundaries and panel-shown", () => {
+    it("opens search with plain slash from a focused non-editable button", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      const settings = screen.getByRole("button", { name: "打开设置" });
+      settings.focus();
+      fireEvent.keyDown(settings, { key: "/" });
+
+      expect(
+        await screen.findByRole("searchbox", { name: "搜索待办" }),
+      ).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "设置" })).toBeNull();
+    });
+
+    it("routes printable typing from a focused non-editable control to capture", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      const settings = screen.getByRole("button", { name: "打开设置" });
+      settings.focus();
+      fireEvent.keyDown(settings, { key: "a" });
+
+      const composer = screen.getByRole("textbox", { name: "添加任务" });
+      await waitFor(() => {
+        expect(document.activeElement).toBe(composer);
+        expect(composer).toHaveProperty("value", "a");
+      });
+    });
+
+    it("focused native-activate button ArrowDown then Space acts on highlighted task", async () => {
+      const user = userEvent.setup();
+      bridge.listTasks.mockResolvedValueOnce([
+        activeTask,
+        secondActiveTask,
+        completedTask,
+      ]);
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      const settings = screen.getByRole("button", { name: "打开设置" });
+      settings.focus();
+      expect(document.activeElement).toBe(settings);
+
+      await user.keyboard("{ArrowDown}");
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      // Stale button focus must be cleared so Space is not native-activate.
+      expect(document.activeElement).not.toBe(settings);
+      expect(screen.queryByRole("region", { name: "设置" })).toBeNull();
+
+      await user.keyboard(" ");
+
+      await waitFor(() => {
+        expect(bridge.toggleTask).toHaveBeenCalledWith("active");
+      });
+      expect(screen.queryByRole("region", { name: "设置" })).toBeNull();
+    });
+
+    it("focused native-activate button ArrowDown then Enter opens reminder for task", async () => {
+      const user = userEvent.setup();
+      bridge.listTasks.mockResolvedValueOnce([
+        activeTask,
+        secondActiveTask,
+        completedTask,
+      ]);
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      const settings = screen.getByRole("button", { name: "打开设置" });
+      settings.focus();
+      await user.keyboard("{ArrowDown}");
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      expect(document.activeElement).not.toBe(settings);
+
+      await user.keyboard("{Enter}");
+
+      expect(await screen.findByRole("region", { name: "编辑提醒" })).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "设置" })).toBeNull();
+    });
+
+    it("ArrowDown from capture always enters the first row after mouse focus", async () => {
+      const user = userEvent.setup();
+      bridge.listTasks.mockResolvedValueOnce([
+        activeTask,
+        secondActiveTask,
+        completedTask,
+      ]);
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      // Select second row, then click capture so focus returns without clearing
+      // selection id; ArrowDown must still enter the first visible row.
+      await user.keyboard("{ArrowDown}{ArrowDown}");
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="second-active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+
+      const composer = screen.getByRole("textbox", { name: "添加任务" });
+      await user.click(composer);
+      expect(document.activeElement).toBe(composer);
+
+      await user.keyboard("{ArrowDown}");
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+    });
+
+    it("ArrowDown with filtered-away selection enters result 0 not result 1", async () => {
+      const user = userEvent.setup();
+      bridge.listTasks.mockResolvedValueOnce([
+        activeTask,
+        secondActiveTask,
+        completedTask,
+      ]);
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      // Select the second unfinished row so selectedId is second-active.
+      await user.keyboard("{ArrowDown}{ArrowDown}");
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="second-active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+
+      // Filter to a query that drops second-active while list-nav stays active:
+      // focus is not on the composer (row selection blurred it).
+      fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+      const search = await screen.findByRole("searchbox", { name: "搜索待办" });
+      // Typing "提交" matches only active among unfinished; mode=search cleared
+      // list-nav, so re-enter then change the query from a non-composer target.
+      await user.type(search, "客");
+      await user.keyboard("{ArrowDown}");
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="second-active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+
+      // Programmatically narrow the controlled search value without focusing it,
+      // leaving isListNavigating true and selectedId absent from results.
+      search.blur();
+      fireEvent.input(search, { target: { value: "提交" } });
+      fireEvent.change(search, { target: { value: "提交" } });
+
+      // Body-targeted ArrowDown: missing selection must enter index 0, not 1.
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+      expect(
+        document.querySelector(
+          '[data-task-id="second-active"].is-selected',
+        ),
+      ).toBeNull();
+    });
+
+    it("panel-shown after overlay resets to capture without treating raw focus as show", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      await user.click(screen.getByRole("button", { name: "打开设置" }));
+      expect(screen.getByRole("region", { name: "设置" })).toBeTruthy();
+
+      // Ordinary temporary focus must not dismiss the overlay.
+      fireEvent.focus(window);
+      expect(screen.getByRole("region", { name: "设置" })).toBeTruthy();
+
+      act(() => {
+        bridge._panelShownHandler?.({ reason: "show" });
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByRole("region", { name: "设置" })).toBeNull();
+        expect(document.activeElement).toBe(
+          screen.getByRole("textbox", { name: "添加任务" }),
+        );
+      });
+    });
+
+    it("search footer without a selected result does not advertise Space", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+      fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+      await screen.findByRole("searchbox", { name: "搜索待办" });
+
+      const footer = screen.getByLabelText("快捷键帮助");
+      expect(footer.textContent).toContain("↓ 结果");
+      expect(footer.textContent).toContain("Esc 退出搜索");
+      expect(footer.textContent).not.toContain("Space 完成/恢复");
     });
   });
 });

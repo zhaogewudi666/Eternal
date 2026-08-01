@@ -1,3 +1,4 @@
+pub mod autostart_config;
 pub mod commands;
 pub mod model;
 pub mod platform;
@@ -10,6 +11,7 @@ pub mod window_position;
 
 use std::path::PathBuf;
 
+use autostart_config::{should_show_initial_panel, AUTOSTART_FLAG};
 use commands::{AppState, SettingsState};
 use platform::{
     cancel_focus_loss_hide, hide_panel, now_ms, register_global_shortcut, schedule_focus_loss_hide,
@@ -27,6 +29,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![AUTOSTART_FLAG]),
+        ))
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(tauri_plugin_window_state::StateFlags::POSITION)
@@ -107,7 +113,8 @@ pub fn run() {
                     .show();
             }
 
-            setup_desktop(app)
+            let show_initial_panel = should_show_initial_panel(std::env::args());
+            setup_desktop(app, show_initial_panel)
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_tasks,

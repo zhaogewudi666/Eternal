@@ -31,6 +31,40 @@ describe("frameless window appearance", () => {
     );
   });
 
+  it("disables the rectangular native window shadow that leaks at CSS-rounded corners", () => {
+    document.body.innerHTML = '<main class="app-shell"></main>';
+
+    const windowConfig = tauriConfig.app.windows.find(
+      (candidate) => candidate.label === "main",
+    );
+    const shell = getComputedStyle(document.querySelector(".app-shell"));
+
+    // Discriminating native check: default shadow is true and paints a
+    // rectangular OS frame/shadow independent of the CSS border-radius.
+    expect(windowConfig.shadow).toBe(false);
+    expect(windowConfig.decorations).toBe(false);
+    expect(windowConfig.transparent).toBe(true);
+
+    // Canvas layers stay transparent so only the rounded shell is opaque.
+    expect(getComputedStyle(document.documentElement).backgroundColor).toBe(
+      "rgba(0, 0, 0, 0)",
+    );
+    expect(getComputedStyle(document.body).backgroundColor).toBe(
+      "rgba(0, 0, 0, 0)",
+    );
+    expect(getComputedStyle(document.getElementById("root") || document.body).backgroundColor).toMatch(
+      /rgba\(0, 0, 0, 0\)|transparent/,
+    );
+
+    // Panel rounding and separation come from CSS, not a native rectangular
+    // backplate. Full-bleed external box-shadow is avoided so WebView layers
+    // do not composite a square edge into the transparent corners.
+    expect(shell.borderRadius).toBe("14px");
+    expect(shell.overflow).toBe("hidden");
+    expect(shell.boxShadow).toBe("none");
+    expect(Number.parseFloat(shell.borderTopWidth)).toBeGreaterThan(0);
+  });
+
   it("uses a neutral macOS dark surface instead of a purple-tinted one", () => {
     document.documentElement.dataset.theme = "dark";
 

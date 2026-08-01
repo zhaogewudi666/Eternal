@@ -5,7 +5,9 @@ import {
   RESTORE_TRANSITION_MS,
   filterTasks,
   footerHintsForContext,
+  isNativeActivateTarget,
   isSubmitKey,
+  isTextEditableTarget,
   moveSelection,
   nextEscapeAction,
   partitionStackedTasks,
@@ -33,11 +35,41 @@ describe("filterTasks", () => {
 });
 
 describe("moveSelection", () => {
-  it("wraps through the visible list and handles an empty list", () => {
+  it("moves without wraparound and signals exit above the first row", () => {
     expect(moveSelection(-1, 1, 3)).toBe(0);
-    expect(moveSelection(2, 1, 3)).toBe(0);
-    expect(moveSelection(0, -1, 3)).toBe(2);
+    expect(moveSelection(-1, -1, 3)).toBe(-1);
+    expect(moveSelection(0, 1, 3)).toBe(1);
+    expect(moveSelection(2, 1, 3)).toBe(2);
+    expect(moveSelection(0, -1, 3)).toBe(-1);
+    expect(moveSelection(1, -1, 3)).toBe(0);
     expect(moveSelection(0, 1, 0)).toBe(-1);
+  });
+
+  it("treats a missing selection as enter-at-zero, not as already-on-zero", () => {
+    // Discriminating: forcing missing -> 0 then +1 would land on 1.
+    expect(moveSelection(-1, 1, 3)).toBe(0);
+    expect(moveSelection(0, 1, 3)).toBe(1);
+  });
+});
+
+describe("editable vs interactive targets", () => {
+  it("classifies text fields as editable and buttons/switches as not", () => {
+    expect(isTextEditableTarget({ tagName: "INPUT", type: "text" })).toBe(true);
+    expect(isTextEditableTarget({ tagName: "INPUT", type: "search" })).toBe(
+      true,
+    );
+    expect(isTextEditableTarget({ tagName: "TEXTAREA" })).toBe(true);
+    expect(isTextEditableTarget({ tagName: "INPUT", type: "checkbox" })).toBe(
+      false,
+    );
+    expect(isTextEditableTarget({ tagName: "BUTTON" })).toBe(false);
+    expect(isNativeActivateTarget({ tagName: "BUTTON" })).toBe(true);
+    expect(
+      isNativeActivateTarget({ tagName: "INPUT", type: "checkbox" }),
+    ).toBe(true);
+    expect(isNativeActivateTarget({ tagName: "INPUT", type: "text" })).toBe(
+      false,
+    );
   });
 });
 
@@ -184,9 +216,9 @@ describe("footerHintsForContext", () => {
       footerHintsForContext({ mode: "normal", modifierLabel: "⌘" }),
     ).toEqual([
       "Enter 添加",
+      "↓ 列表",
+      "/ 搜索",
       "⌘1/2 分区",
-      "⌘F 查找",
-      "↑↓ 选择",
       "Esc 关闭",
     ]);
   });
@@ -199,7 +231,7 @@ describe("footerHintsForContext", () => {
         selectedId: "a",
         modifierLabel: "Ctrl+",
       }),
-    ).toEqual(["Space 完成/恢复", "Enter 提醒", "⌫ 删除", "Esc"]);
+    ).toEqual(["Space 完成/恢复", "Enter 提醒", "⌫ 删除", "↑ 输入", "Esc"]);
   });
 
   it("shows reminder keyboard closure hints", () => {
@@ -217,8 +249,20 @@ describe("footerHintsForContext", () => {
     ]);
     expect(footerHintsForContext({ mode: "settings" })).toEqual(["Esc 关闭"]);
     expect(footerHintsForContext({ mode: "search" })).toEqual([
-      "↑↓ 选择",
+      "↓ 结果",
+      "Esc 退出搜索",
+    ]);
+    expect(
+      footerHintsForContext({
+        mode: "search",
+        isListNavigating: true,
+        selectedId: "a",
+      }),
+    ).toEqual([
       "Space 完成/恢复",
+      "Enter 提醒",
+      "⌫ 删除",
+      "↑ 搜索",
       "Esc 退出搜索",
     ]);
     expect(
@@ -228,7 +272,7 @@ describe("footerHintsForContext", () => {
 
   it("uses the Windows modifier label on capture hints", () => {
     expect(
-      footerHintsForContext({ mode: "normal", modifierLabel: "Ctrl+" })[1],
-    ).toBe("Ctrl+1/2 分区");
+      footerHintsForContext({ mode: "normal", modifierLabel: "Ctrl+" }),
+    ).toContain("Ctrl+1/2 分区");
   });
 });

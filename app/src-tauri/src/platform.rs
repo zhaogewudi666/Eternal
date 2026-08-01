@@ -2,9 +2,10 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use serde::Serialize;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{App, AppHandle, Manager};
+use tauri::{App, AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_window_state::{AppHandleExt, StateFlags, WindowExt};
@@ -66,6 +67,11 @@ pub(crate) fn now_ms() -> Option<i64> {
     i64::try_from(millis).ok()
 }
 
+#[derive(Clone, Serialize)]
+struct PanelShownPayload {
+    reason: &'static str,
+}
+
 pub fn show_panel(app: &AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window("main") {
         // macOS keeps the whole process hidden after `hide_panel`, so the window
@@ -74,6 +80,8 @@ pub fn show_panel(app: &AppHandle) -> tauri::Result<()> {
         app.show()?;
         window.show()?;
         window.set_focus()?;
+        // Explicit reopen signal for the frontend — not ordinary temporary focus.
+        let _ = app.emit("panel-shown", PanelShownPayload { reason: "show" });
     }
     Ok(())
 }
@@ -216,7 +224,13 @@ pub fn cancel_focus_loss_hide(window: &tauri::Window) {
     }
 }
 
-pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+/// Wires tray/menu bar, window position, and the reminder scheduler.
+/// When `show_initial_panel` is false (login-item / `--autostart`), the panel
+/// stays hidden and unfocused while the rest of the desktop shell still runs.
+pub fn setup_desktop(
+    app: &mut App,
+    show_initial_panel: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
@@ -263,7 +277,9 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     start_reminder_scheduler(app.handle().clone());
-    show_panel(app.handle())?;
+    if show_initial_panel {
+        show_panel(app.handle())?;
+    }
     Ok(())
 }
 

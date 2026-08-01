@@ -1,6 +1,6 @@
 # Eternal Design QA
 
-final result: passed (0.2.2 automated evidence)
+final result: passed (0.2.3 final-review-fixes; both installers rebuilt from post-fix source)
 
 ## Source truth
 
@@ -9,131 +9,85 @@ final result: passed (0.2.2 automated evidence)
 - Root-cause audit (pre-fix): `design/audit-2026-08-01/`
 - Authoritative product constraints: `app/AGENTS.md`
 
-## 0.2.2 UX acceptance (automated evidence only)
+## 0.2.3 corner root cause
 
-Five user-approved UX groups were implemented with RED→GREEN tests. Counts from
-the final verification in this worker:
+| Step | Evidence |
+|------|----------|
+| Symptom | Tiny square corners / rectangular edge on the frameless rounded panel |
+| Observation | CSS already used transparent `body`/`#root`, `border-radius: 14px`, `overflow: hidden`; Tauri window was `transparent: true` + `macOSPrivateApi` |
+| Discriminating check | Tauri `WindowConfig.shadow` defaults to `true`. Undecorated + shadow paints a rectangular OS frame/shadow (and on Windows a 1px white border) independent of CSS radius. Full-bleed CSS `box-shadow` also composites as a rectangular layer over transparent corners |
+| Confirmed root cause | Native window shadow remained enabled on a CSS-rounded transparent window; rectangular compositor edge leaked at the four corners |
+| Fix | `shadow: false` in `tauri.conf.json`; transparent `html`/`body`/`#root`; shell keeps 14px radius + 1px border; remove full-bleed panel `box-shadow` |
+
+## 0.2.3 keyboard flow (RED → GREEN)
+
+| Behavior | RED | GREEN |
+|----------|-----|-------|
+| ArrowDown enters first unfinished | selected second row first | first unfinished selected |
+| ArrowUp from first row → capture/search | wrap / trap in list | focus returns to active field |
+| No list wraparound | modulo wrap | clamp / exit above first |
+| Plain `/` opens search | no search / slash inserted | search focused, value empty |
+| Spontaneous typing from row | (existing) | inserts into capture/search |
+| Footer routes | still showed ⌘F / ↑↓ only | `↓ 列表`, `/ 搜索`, `↑ 输入` / `↑ 搜索` |
+| Slash from focused button | swallowed / ignored | opens search |
+| Printable from non-editable control | ignored | returns to capture/search |
+| ArrowDown after capture re-focus | could land on stale second row | always first visible row |
+| Missing filtered selection + ArrowDown | force 0 then +1 → row 1 | `moveSelection(-1, +1)` → row 0 |
+| Search footer before result selected | advertised Space | only `↓ 结果` / `Esc` |
+| Panel-shown after overlay | stuck in settings/search | reset to normal capture |
+| Focused native-activate + ArrowDown then Space/Enter | Space/Enter activated old button | blur stale control; Space toggles task, Enter opens reminder |
+
+## 0.2.3 silent autostart (RED → GREEN)
+
+| Behavior | RED | GREEN |
+|----------|-----|-------|
+| Plugin args | `None` | `--autostart` on macOS LaunchAgent + Windows |
+| Initial show_panel | always called → focus steal | skipped when `should_show_initial_panel(args)` is false |
+| Arg parse / show decision | source-string only | production helpers + unit tests |
+| Exact Cargo pin | caret `"2.5.1"` | exact `"=2.5.1"` |
+| Pending across close/reopen | reset in-flight; duplicate enable | one OS call; pending preserved |
+| Read failure / unknown / loading | fabricated false/off switch (`aria-checked=false`) | no operable switch; loading status or error + 重试; switch only after boolean OS read |
+| Enable/disable success & failure | partial | commit only confirmed; rollback + inline error |
+| Enter on switch | missing | same transaction as click; Space native |
+| panel-shown event | none | emitted from real `show_panel`; frontend resets capture |
+
+## Automated suite counts (final-review-fixes)
 
 | Suite | Result |
 |-------|--------|
-| Frontend vitest | **107 passed** / 6 files |
-| Sites worker | **4 passed** (`npm run test:sites`) |
-| Rust unit tests | **51 passed** (`cargo test`) |
-| Rust format | `cargo fmt --all -- --check` clean |
-| Rust clippy | `cargo clippy --all-targets --all-features -- -D warnings` clean |
-| Frontend production build | `npm run build` → `dist/client` + Sites packaging |
+| Frontend vitest | **142 passed** / 7 files (includes unknown-state + focused-button Space/Enter regressions) |
+| Sites worker | `npm run test:sites` (4 passed) |
+| Rust unit tests | `cargo test` (54 passed) |
+| Rust format | `cargo fmt --all -- --check` |
+| Rust clippy | `cargo clippy --all-targets --all-features -- -D warnings` |
+| Frontend production build | `npm run build` |
 
-### Group evidence
+## Historical 0.2.1 / 0.2.2
 
-1. **Reminder full keyboard closure**
-   - RED: `ReminderEditor` Enter-save called 0 times; no preset buttons.
-   - GREEN: Tab reaches controls; Enter saves valid time; Esc closes without
-     `onSave`; Enter on focused `<select>` does not save; footer
-     `Tab 切换` / `Enter 保存` / `Esc 取消`.
+Geometry and stacked list hierarchy remain the baseline; 0.2.3 supersedes footer copy, list wraparound, ArrowUp exit, `/` search, native shadow policy, and silent autostart. See prior sections in git history for 0.2.1 browser PNGs and 0.2.2 interaction groups.
 
-2. **Completion navigation**
-   - RED: selection stayed on completed row after toggle.
-   - GREEN: complete → next unfinished; last unfinished → previous; sole
-     unfinished → clear selection + focus capture; restore keeps selection on
-     restored unfinished row; toggle errors still surface without removing the
-     row (existing safe-delete / toggle error paths preserved).
+## Packaging (final artifacts)
 
-3. **Context-specific footer**
-   - RED: capture footer still showed Space complete; reminder footer was only
-     `Esc 关闭`.
-   - GREEN: capture / selected-row / reminder / delete / settings / recording /
-     search footers match `footerHintsForContext`; macOS `⌘` vs Windows `Ctrl+`.
+Artifacts under `releases/0.2.3/` rebuilt from **post final-review-fixes** source (2026-08-01). macOS DMG replaced the earlier nonstandard binary-patched image with a **standard Tauri end-to-end DMG** (no offset replace / no manual payload injection):
 
-4. **Reminder presets**
-   - RED: no `15 分钟` / `1 小时` / `今晚` / `明天` controls.
-   - GREEN: presets fill local datetime only (no silent persist); Enter confirms;
-     pure helpers cover 15m, 1h, tonight (today 20:00 or tomorrow 20:00),
-     tomorrow 09:00.
+| Artifact | Build path | Verification |
+|----------|------------|--------------|
+| `Eternal-0.2.3-Windows-x64-Setup.exe` | `npm run tauri build -- --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis --ci` with writable `CARGO_HOME` + `XWIN_CACHE_DIR` under `app/src-tauri/target/` | Unchanged final NSIS; `file` → PE32; size 3820697; SHA256 `2cc81d7630083171d87c477583915464498c0a5afeb9eeda5da7bb49c04905bf` |
+| `Eternal-0.2.3-macOS-arm64.dmg` | From repo root `app/`: `npm run tauri -- build --bundles dmg --ci` (Vite frontend + release `app` + ad-hoc sign identity `-` + `bundle_dmg.sh` / `hdiutil create`) | `hdiutil verify` VALID; mount layout `Eternal.app` + `Applications` symlink; mounted app **byte-identical** to standard source `target/release/bundle/macos/Eternal.app` (`diff -rq` + full file SHA256); `codesign --verify --deep --strict` OK source + mounted; arm64; version 0.2.3; `LSUIElement=true`; binary markers `index-C9aEWc-h.js`, `panel-shown`, `--autostart`; `file` → zlib compressed data; size 7235979 |
+| `SHA256SUMS` | regenerated after standard DMG copy; Windows line preserved | `shasum -a 256 -c SHA256SUMS` both OK |
+| `INSTALL.zh-CN.md` | install notes for unsigned test packages | present |
 
-5. **Restrained completion feedback**
-   - RED: row migrated immediately with selection glued to toggled id.
-   - GREEN: checkbox/strike before section move; 160 ms complete / 120 ms restore;
-     reduced-motion commits immediately; duplicate Space ignored in flight;
-     unmount clears timers (fake-timer component tests).
+SHA256 (final):
 
-## Historical 0.2.1 browser screenshot evidence
+```
+caf1deecdccf48eeb1fd969206ec13d6fe0b710aecfd62214740d3b29ebc597b  Eternal-0.2.3-macOS-arm64.dmg
+2cc81d7630083171d87c477583915464498c0a5afeb9eeda5da7bb49c04905bf  Eternal-0.2.3-Windows-x64-Setup.exe
+```
 
-Full-panel captures from the rendered 0.2.1 UI (not jsdom-only). Geometry and
-stacked list hierarchy remain the 0.2.2 baseline; footer copy and reminder
-presets supersede the 0.2.1 footer strings in those PNGs.
+Notes:
 
-| State | Full panel | Focused crop |
-|-------|------------|--------------|
-| Light normal | `design/qa/v021-light-normal-full.png` | `design/qa/v021-light-normal.png` |
-| Light selected row | `design/qa/v021-light-selected-full.png` | — |
-| Reminder editor | `design/qa/v021-reminder-full.png` | `design/qa/v021-reminder.png` |
-| Delete confirmation (post-fix) | `design/qa/v021-delete-confirm-postfix-full.png` | `design/qa/v021-delete-confirm-postfix.png` |
-| Dark default | `design/qa/v021-dark-default-full.png` | `design/qa/v021-dark-default.png` |
-| Reference vs dark | `design/qa/v021-reference-vs-dark-default.png` | — |
-
-## Browser-rendered viewport / states
-
-- Viewport target remains **380 × 560**.
-- Unfinished rows above, labeled `已完成` section below; capture always available.
-- Dark tokens remain macOS-native neutrals (`#1C1C1E` / `#2C2C2E` / `#0A84FF`);
-  transparent native window + `14 px` shell radius preserved.
-- 0.2.2 does **not** claim new physical-device browser PNGs in this pass; UI
-  behavior is covered by the automated suite above.
-
-## Interaction checks (0.2.2)
-
-| Interaction | Evidence |
-|-------------|----------|
-| Reminder Tab / Enter / Esc | `ReminderEditor.test.jsx` |
-| Reminder presets fill only | `ReminderEditor.test.jsx` + `reminder-time.test.js` |
-| Complete → next/prev unfinished | `App.test.jsx` completion navigation |
-| Restore keeps selection | `App.test.jsx` |
-| Context footers | `App.test.jsx` + `task-state.test.js` `footerHintsForContext` |
-| 160/120 ms transition | `App.test.jsx` restrained completion feedback |
-| Reduced motion immediate commit | `App.test.jsx` |
-| Safe delete / Esc focus return | Existing `App.test.jsx` safe deletion suite |
-| Platform modifier labels | Footer + shortcut format tests |
-
-## 0.2.2 packaging evidence
-
-Artifacts under `releases/0.2.2/`:
-
-| File | Size | Notes |
-|------|------|-------|
-| `Eternal-0.2.2-macOS-arm64.dmg` | 7,279,316 bytes (~6.9 MiB) | UDZO; `hdiutil verify` VALID; embeds `index-DsgUJarr` |
-| `Eternal-0.2.2-Windows-x64-Setup.exe` | 3,805,740 bytes (~3.6 MiB) | NSIS x64; PE Nullsoft installer; `app.exe` embeds `index-DsgUJarr` |
-| `INSTALL.zh-CN.md` | install + keyboard/preset notes | |
-| `SHA256SUMS` | both installers | `shasum -a 256 -c` OK |
-
-macOS app (bundled inside DMG after mount):
-
-- `diskutil image attach` mount shows `Eternal.app` + `Applications -> /Applications`
-- `CFBundleShortVersionString` / `CFBundleVersion` = **0.2.2**
-- Executable `Mach-O 64-bit arm64`
-- Embedded frontend asset names from the post-footer-fix build (`index-DsgUJarr`, `index-DOwouRDQ`) present in binary
-- Signing: adhoc/linker-signed only (`--no-sign`); not Developer ID / not notarized
-- Search footer uses `Space 完成/恢复` (search spans unfinished + completed)
-
-Windows:
-
-- Built with `cargo-xwin` + `makensis` targeting `x86_64-pc-windows-msvc`
-- `app.exe` is PE32+ x86-64; installer is NSIS x64 setup
-- Unsigned (SmartScreen expected)
-
-## Out of scope / limits
-
-- Unsigned installers only; no Apple Developer ID notarization, no Windows
-  Authenticode, no physical-device Gatekeeper/SmartScreen click-through proof.
-- No new Codex in-app browser PNG set for 0.2.2 footers/presets in this worker
-  pass; automated tests are the authoritative 0.2.2 behavior evidence.
-- macOS DMG packaging used the established local toolchain with a write-blocked
-  `hdiutil create` workaround (template UDRW binary/plist in-place update +
-  `hdiutil convert`/`verify` + `diskutil image attach` content check).
-
-## History
-
-1. **0.2.1 implementation QA** through delete-dialog post-fix and native-black
-   transparent window follow-up (see prior sections / `design/qa/v021-*`).
-2. **0.2.2 UX five-group release**: reminder keyboard + presets, completion
-   navigation, context footers, restrained toggle feedback; version bump and
-   unsigned macOS arm64 + Windows x64 packages under `releases/0.2.2/`.
+- Both packages remain **unsigned** test builds (ad-hoc macOS signing identity `-`; Windows signing skipped on non-Windows host).
+- macOS DMG is the standard Tauri UDZO image (app + Applications link). No binary-offset payload patching; Code Resources match the signed source app.
+- Packaged Mach-O SHA256 `05398d4df6a904179a36c4d20f900203e702b6e670a64145fffbcc8b2c238db5` (source app and mounted app identical).
+- Gatekeeper “right-click Open” remains the expected path for unsigned local builds.
+- No DMG-pending claim remains: both installers are present, hashed, and traced to final-source binaries via standard bundling.

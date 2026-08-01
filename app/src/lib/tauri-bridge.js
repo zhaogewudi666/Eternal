@@ -1,6 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import {
+  disable as pluginDisableAutostart,
+  enable as pluginEnableAutostart,
+  isEnabled as pluginIsAutostartEnabled,
+} from "@tauri-apps/plugin-autostart";
 
 const PREVIEW_STORAGE_KEY = "eternal.preview.tasks";
+const PREVIEW_AUTOSTART_KEY = "eternal.preview.autostart";
+const PREVIEW_PANEL_SHOWN_LISTENERS = new Set();
 
 function isTauriRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -200,4 +208,62 @@ export async function setGlobalShortcut(accelerator) {
 
 export async function setShortcutRecording(recording) {
   if (isTauriRuntime()) return invoke("set_shortcut_recording", { recording });
+}
+
+export async function isAutostartEnabled() {
+  if (isTauriRuntime()) return pluginIsAutostartEnabled();
+  return window.localStorage.getItem(PREVIEW_AUTOSTART_KEY) === "1";
+}
+
+export async function enableAutostart() {
+  if (isTauriRuntime()) {
+    await pluginEnableAutostart();
+    return;
+  }
+  window.localStorage.setItem(PREVIEW_AUTOSTART_KEY, "1");
+}
+
+export async function disableAutostart() {
+  if (isTauriRuntime()) {
+    await pluginDisableAutostart();
+    return;
+  }
+  window.localStorage.removeItem(PREVIEW_AUTOSTART_KEY);
+}
+
+/// Subscribe to explicit backend panel-shown signals from `show_panel`.
+/// Preview/tests can push via `emitPanelShownPreview`.
+export function subscribePanelShown(handler) {
+  if (typeof handler !== "function") {
+    return () => {};
+  }
+
+  if (isTauriRuntime()) {
+    let active = true;
+    let unlisten = () => {};
+    listen("panel-shown", (event) => {
+      handler(event?.payload ?? { reason: "show" });
+    }).then((fn) => {
+      if (!active) {
+        fn();
+        return;
+      }
+      unlisten = fn;
+    });
+    return () => {
+      active = false;
+      unlisten();
+    };
+  }
+
+  PREVIEW_PANEL_SHOWN_LISTENERS.add(handler);
+  return () => {
+    PREVIEW_PANEL_SHOWN_LISTENERS.delete(handler);
+  };
+}
+
+export function emitPanelShownPreview(payload = { reason: "show" }) {
+  for (const handler of PREVIEW_PANEL_SHOWN_LISTENERS) {
+    handler(payload);
+  }
 }

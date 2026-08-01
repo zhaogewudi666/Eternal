@@ -7,11 +7,56 @@ export function filterTasks(tasks, query) {
   );
 }
 
+/// Text-editable controls accept typed characters; buttons/checkboxes do not.
+export function isTextEditableTarget(target) {
+  if (!target || typeof target !== "object") return false;
+  if (target.isContentEditable) return true;
+
+  const tag = target.tagName;
+  if (tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (tag === "INPUT") {
+    const type = String(target.type || "text").toLowerCase();
+    return ![
+      "button",
+      "checkbox",
+      "radio",
+      "submit",
+      "reset",
+      "file",
+      "image",
+      "range",
+      "color",
+      "hidden",
+    ].includes(type);
+  }
+  return false;
+}
+
+/// Controls that activate natively with Space/Enter (leave them alone).
+export function isNativeActivateTarget(target) {
+  if (!target || typeof target !== "object") return false;
+  const tag = target.tagName;
+  if (tag === "BUTTON" || tag === "A") return true;
+  if (tag === "INPUT") {
+    const type = String(target.type || "").toLowerCase();
+    return ["button", "submit", "reset", "checkbox", "radio", "image"].includes(
+      type,
+    );
+  }
+  return false;
+}
+
+/// Move within a visible list without wraparound. Returns `-1` when the move
+/// would leave above the first row (ArrowUp exit), clamps at the last row, and
+/// enters at `0` when there is no current selection and direction is down.
 export function moveSelection(currentIndex, direction, itemCount) {
   if (itemCount <= 0) return -1;
-  if (currentIndex < 0) return direction < 0 ? itemCount - 1 : 0;
+  if (currentIndex < 0) return direction > 0 ? 0 : -1;
 
-  return (currentIndex + direction + itemCount) % itemCount;
+  const next = currentIndex + direction;
+  if (next < 0) return -1;
+  if (next >= itemCount) return itemCount - 1;
+  return next;
 }
 
 export function isSubmitKey(event) {
@@ -114,17 +159,26 @@ export function footerHintsForContext({
     return ["Esc 关闭"];
   }
   if (isSearching || mode === "search") {
-    // Search spans unfinished and completed rows, so Space may complete or restore.
-    return ["↑↓ 选择", "Space 完成/恢复", "Esc 退出搜索"];
+    // Only advertise Space after a result is selected; search-input state has no row actions.
+    if (isListNavigating && selectedId) {
+      return [
+        "Space 完成/恢复",
+        "Enter 提醒",
+        "⌫ 删除",
+        "↑ 搜索",
+        "Esc 退出搜索",
+      ];
+    }
+    return ["↓ 结果", "Esc 退出搜索"];
   }
   if (isListNavigating && selectedId) {
-    return ["Space 完成/恢复", "Enter 提醒", "⌫ 删除", "Esc"];
+    return ["Space 完成/恢复", "Enter 提醒", "⌫ 删除", "↑ 输入", "Esc"];
   }
   return [
     "Enter 添加",
+    "↓ 列表",
+    "/ 搜索",
     `${modifierLabel}1/2 分区`,
-    `${modifierLabel}F 查找`,
-    "↑↓ 选择",
     "Esc 关闭",
   ];
 }

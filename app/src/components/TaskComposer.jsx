@@ -9,6 +9,7 @@ export function TaskComposer({
   onChange,
   onSubmit,
   onExitSearch,
+  onFocusInput,
 }) {
   const isSearch = mode === "search";
 
@@ -31,6 +32,7 @@ export function TaskComposer({
         autoComplete="off"
         spellCheck="false"
         onChange={(event) => onChange(event.target.value)}
+        onFocus={() => onFocusInput?.()}
         onKeyDown={(event) => {
           if (!isSearch && isSubmitKey(event.nativeEvent) && value.trim()) {
             event.preventDefault();

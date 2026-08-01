@@ -15,12 +15,16 @@ import {
   clearReminder,
   createTask,
   deleteTask,
+  disableAutostart,
+  enableAutostart,
   getGlobalShortcut,
   hidePanel,
+  isAutostartEnabled,
   listTasks,
   setGlobalShortcut,
   setReminder,
   setShortcutRecording,
+  subscribePanelShown,
   toggleTask,
 } from "./lib/tauri-bridge";
 import {
@@ -33,6 +37,8 @@ import {
 import {
   filterTasks,
   footerHintsForContext,
+  isNativeActivateTarget,
+  isTextEditableTarget,
   moveSelection,
   nextEscapeAction,
   partitionStackedTasks,
@@ -87,6 +93,10 @@ export function App() {
   const [shortcut, setShortcut] = useState(null);
   const [shortcutError, setShortcutError] = useState("");
   const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
+  // null while the OS registration state is loading for the open settings panel.
+  const [autostartEnabled, setAutostartEnabled] = useState(null);
+  const [autostartPending, setAutostartPending] = useState(false);
+  const [autostartError, setAutostartError] = useState("");
   // Visual-only completion state while the row stays in its old section.
   // { id, updated } — checkbox/strike follow `updated` until the timer commits.
   const [toggleTransition, setToggleTransition] = useState(null);
@@ -96,6 +106,10 @@ export function App() {
   const listScrollRef = useRef(null);
   const toggleTimerRef = useRef(null);
   const toggleInFlightRef = useRef(false);
+  const autostartInFlightRef = useRef(false);
+  const autostartPendingRef = useRef(false);
+  const autostartLoadGenRef = useRef(0);
+  const autostartOpGenRef = useRef(0);
 
   const platform = useMemo(() => currentPlatform(), []);
   const isSearching = mode === "search";
@@ -356,6 +370,103 @@ export function App() {
     setMode("normal");
   }, [isRecordingShortcut, stopRecording]);
 
+  const loadAutostartState = useCallback(() => {
+    if (autostartPendingRef.current || autostartInFlightRef.current) {
+      return () => {};
+    }
+
+    let cancelled = false;
+    const gen = ++autostartLoadGenRef.current;
+    setAutostartError("");
+    setAutostartEnabled(null);
+
+    isAutostartEnabled()
+      .then((enabled) => {
+        if (
+          cancelled ||
+          gen !== autostartLoadGenRef.current ||
+          autostartPendingRef.current
+        ) {
+          return;
+        }
+        setAutostartEnabled(Boolean(enabled));
+      })
+      .catch((reason) => {
+        if (
+          cancelled ||
+          gen !== autostartLoadGenRef.current ||
+          autostartPendingRef.current
+        ) {
+          return;
+        }
+        // Keep unknown — do not fabricate a disabled OS state.
+        setAutostartEnabled(null);
+        setAutostartError(
+          `无法读取开机启动状态：${String(reason?.message || reason)}`,
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (mode !== "settings") return undefined;
+    // Pending toggle lifetime is independent of the popover open/close cycle.
+    if (autostartPendingRef.current || autostartInFlightRef.current) {
+      return undefined;
+    }
+    return loadAutostartState();
+  }, [loadAutostartState, mode]);
+
+  const handleAutostartChange = useCallback(
+    async (desired) => {
+      if (autostartInFlightRef.current || autostartPendingRef.current) return;
+      if (typeof autostartEnabled !== "boolean") return;
+      if (autostartEnabled === desired) return;
+
+      const previous = autostartEnabled;
+      const op = ++autostartOpGenRef.current;
+      autostartInFlightRef.current = true;
+      autostartPendingRef.current = true;
+      setAutostartPending(true);
+      setAutostartError("");
+
+      try {
+        if (desired) {
+          await enableAutostart();
+        } else {
+          await disableAutostart();
+        }
+        if (op !== autostartOpGenRef.current) return;
+        setAutostartEnabled(desired);
+      } catch (reason) {
+        if (op !== autostartOpGenRef.current) return;
+        setAutostartEnabled(previous);
+        setAutostartError(String(reason?.message || reason));
+      } finally {
+        if (op === autostartOpGenRef.current) {
+          autostartInFlightRef.current = false;
+          autostartPendingRef.current = false;
+          setAutostartPending(false);
+        }
+      }
+    },
+    [autostartEnabled],
+  );
+
+  const resetToCapture = useCallback(() => {
+    setMode("normal");
+    setQuery("");
+    setIsListNavigating(false);
+    setIsRecordingShortcut(false);
+    setShortcutRecording(false).catch(() => {});
+    queueMicrotask(() => inputRef.current?.focus());
+  }, []);
+
+  useEffect(() => subscribePanelShown(() => resetToCapture()), [resetToCapture]);
+
   useEffect(() => {
     if (mode !== "settings" && isRecordingShortcut) stopRecording();
   }, [isRecordingShortcut, mode, stopRecording]);
@@ -461,35 +572,91 @@ export function App() {
 
       if (hasCommand || event.altKey) return;
 
-      const targetIsInteractive = /^(A|BUTTON|INPUT|SELECT|TEXTAREA)$/.test(
-        event.target?.tagName || "",
-      );
+      const targetIsEditable = isTextEditableTarget(event.target);
+      const targetIsNativeActivate = isNativeActivateTarget(event.target);
       const targetIsComposer = event.target === inputRef.current;
       const isSelectionKey =
         event.key === "ArrowDown" || event.key === "ArrowUp";
       if (isSelectionKey && event.shiftKey) return;
-      if (targetIsInteractive && !(targetIsComposer && isSelectionKey)) return;
+      // Leave real typing fields alone, except ArrowDown/Up from the composer.
+      if (targetIsEditable && !(targetIsComposer && isSelectionKey)) return;
 
       if (isSelectionKey) {
         if (!navigableTasks.length) return;
         event.preventDefault();
-        if (targetIsComposer) inputRef.current?.blur();
+
+        // Clear stale DOM focus on non-editable native-activate controls so
+        // later Space/Enter act on the highlighted task, not the old button.
+        const clearStaleActivateFocus = () => {
+          if (
+            targetIsNativeActivate &&
+            typeof event.target?.blur === "function"
+          ) {
+            event.target.blur();
+          }
+        };
+
+        // From the actual capture/search input, always enter the first row —
+        // even if isListNavigating is stale from a previous selection.
+        if (targetIsComposer) {
+          if (event.key !== "ArrowDown") return;
+          inputRef.current?.blur();
+          setIsListNavigating(true);
+          setSelectedId(navigableTasks[0]?.id || null);
+          return;
+        }
+
+        if (!isListNavigating) {
+          if (event.key !== "ArrowDown") return;
+          clearStaleActivateFocus();
+          setIsListNavigating(true);
+          setSelectedId(navigableTasks[0]?.id || null);
+          return;
+        }
+
         const currentIndex = navigableTasks.findIndex(
           (task) => task.id === selectedId,
         );
+        // Missing/filtered-away selection is -1 so ArrowDown enters result 0.
         const index = moveSelection(
           currentIndex,
           event.key === "ArrowDown" ? 1 : -1,
           navigableTasks.length,
         );
+
+        // ArrowUp above the first row returns focus to capture/search input.
+        if (index < 0) {
+          setIsListNavigating(false);
+          inputRef.current?.focus();
+          return;
+        }
+
+        clearStaleActivateFocus();
         setIsListNavigating(true);
         setSelectedId(navigableTasks[index]?.id || null);
+        return;
+      }
+
+      // Plain "/" on any non-editable focus target opens/focuses search.
+      if (
+        event.key === "/" &&
+        !targetIsEditable &&
+        (mode === "normal" || mode === "search")
+      ) {
+        event.preventDefault();
+        setIsListNavigating(false);
+        if (mode === "search") {
+          inputRef.current?.focus();
+        } else {
+          setMode("search");
+        }
         return;
       }
 
       if (
         event.key.length === 1 &&
         event.key !== " " &&
+        !targetIsEditable &&
         (isSearching || mode === "normal")
       ) {
         event.preventDefault();
@@ -506,6 +673,9 @@ export function App() {
         }
         return;
       }
+
+      // Do not intercept native Space/Enter on buttons, links, or switches.
+      if (targetIsNativeActivate) return;
 
       if (
         event.key === " " &&
@@ -621,6 +791,7 @@ export function App() {
         inputRef={inputRef}
         onChange={isSearching ? setQuery : setDraft}
         onSubmit={handleCreate}
+        onFocusInput={() => setIsListNavigating(false)}
         onExitSearch={() => {
           setMode("normal");
           setQuery("");
@@ -670,6 +841,11 @@ export function App() {
           isRecordingShortcut={isRecordingShortcut}
           onStartRecording={startRecording}
           onResetShortcut={() => applyShortcut(DEFAULT_SHORTCUT)}
+          autostartEnabled={autostartEnabled}
+          autostartPending={autostartPending}
+          autostartError={autostartError}
+          onAutostartChange={handleAutostartChange}
+          onRetryAutostartLoad={loadAutostartState}
         />
       )}
 

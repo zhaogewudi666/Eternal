@@ -7,10 +7,26 @@ export function SettingsPopover({
   isRecordingShortcut,
   onStartRecording,
   onResetShortcut,
+  autostartEnabled,
+  autostartPending,
+  autostartError,
+  onAutostartChange,
+  onRetryAutostartLoad,
 }) {
   const status = isRecordingShortcut
     ? "正在等待新的组合，按 Esc 取消录制。"
     : shortcutError || "在任何应用中呼出或收起 Eternal。";
+  const autostartKnown = typeof autostartEnabled === "boolean";
+  const autostartBusy = Boolean(autostartPending);
+  const showReadRetry =
+    !autostartKnown && !autostartPending && Boolean(autostartError);
+  function handleSwitchKeyDown(event) {
+    if (event.key !== "Enter" || event.shiftKey || event.altKey) return;
+    if (event.metaKey || event.ctrlKey) return;
+    if (autostartBusy || !autostartKnown) return;
+    event.preventDefault();
+    onAutostartChange?.(!autostartEnabled);
+  }
 
   return (
     <section className="popover settings-popover" aria-label="设置">
@@ -78,6 +94,51 @@ export function SettingsPopover({
         >
           {status}
         </p>
+      </section>
+
+      <section className="autostart-section" aria-label="开机启动">
+        <div className="autostart-row">
+          <span>开机时启动 Eternal</span>
+          {autostartKnown ? (
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="开机时启动 Eternal"
+              checked={autostartEnabled}
+              disabled={autostartBusy}
+              onChange={(event) => onAutostartChange?.(event.target.checked)}
+              onKeyDown={handleSwitchKeyDown}
+            />
+          ) : autostartError ? (
+            <span className="shortcut-hint" aria-hidden="true">
+              —
+            </span>
+          ) : (
+            <span
+              className="shortcut-hint"
+              role="status"
+              aria-live="polite"
+              aria-label="正在读取开机启动状态"
+            >
+              正在读取开机启动状态…
+            </span>
+          )}
+        </div>
+        {autostartError ? (
+          <p className="shortcut-hint is-error" role="status">
+            {autostartError}
+          </p>
+        ) : null}
+        {showReadRetry ? (
+          <button
+            className="text-button autostart-retry"
+            type="button"
+            aria-label="重试读取开机启动状态"
+            onClick={() => onRetryAutostartLoad?.()}
+          >
+            重试
+          </button>
+        ) : null}
       </section>
     </section>
   );
