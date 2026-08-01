@@ -20,13 +20,13 @@
 ## 截图
 
 <p align="center">
-  <img src="artifacts/qa/eternal-dark-final-physical.png" alt="Eternal 深色面板" width="320">
+  <img src="artifacts/readme/eternal-dark.png" alt="Eternal 深色任务面板" width="320">
   &nbsp;&nbsp;
-  <img src="artifacts/qa/eternal-light-settings-380x560.png" alt="Eternal 浅色设置" width="320">
+  <img src="artifacts/readme/eternal-light.png" alt="Eternal 浅色任务面板" width="320">
 </p>
 
 <p align="center">
-  <sub>深色任务面板 · 浅色设置（外观 / 全局快捷键 / 开机启动）</sub>
+  <sub>深色模式 · 浅色模式</sub>
 </p>
 
 ---
