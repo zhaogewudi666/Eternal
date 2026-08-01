@@ -15,6 +15,10 @@
   <a href="https://github.com/zhaogewudi666/Eternal/releases/latest">最新发布</a>
 </p>
 
+<p align="center">
+  <strong>简体中文</strong> | <a href="README.en.md">English</a>
+</p>
+
 ---
 
 ## 截图
@@ -113,10 +117,17 @@ npm run tauri -- dev
 
 ```
 app/                 # 桌面应用（前端 + src-tauri）
-artifacts/qa/        # 界面截图
+artifacts/qa/        # QA 界面截图
+artifacts/readme/    # README 截图
 design/              # 设计参考与图标源稿
 releases/            # 本地发布安装包与校验文件
 ```
+
+---
+
+## 许可证
+
+本项目采用 [0BSD](LICENSE) 许可。你可以出于任何目的使用、复制、修改和分发本软件（包括商业用途），**无需署名**；软件按「原样」提供，作者不承担担保责任。详见 [LICENSE](LICENSE)。
 
 ---
 
