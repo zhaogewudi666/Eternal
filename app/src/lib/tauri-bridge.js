@@ -236,7 +236,6 @@ export async function setPanelPinned(pinned) {
   return Boolean(pinned);
 }
 
-const PREVIEW_WIDGET_ENABLED_KEY = "eternal.preview.widgetEnabled";
 const PREVIEW_TASKS_CHANGED_LISTENERS = new Set();
 let previewTasksRevision = 0;
 
@@ -246,25 +245,6 @@ function emitTasksChangedPreview() {
   for (const handler of PREVIEW_TASKS_CHANGED_LISTENERS) {
     handler(payload);
   }
-}
-
-export async function getWidgetEnabled() {
-  if (isTauriRuntime()) return invoke("get_widget_enabled");
-  return window.localStorage.getItem(PREVIEW_WIDGET_ENABLED_KEY) === "1";
-}
-
-export async function setWidgetEnabled(enabled) {
-  if (isTauriRuntime()) return invoke("set_widget_enabled", { enabled });
-  if (enabled) {
-    window.localStorage.setItem(PREVIEW_WIDGET_ENABLED_KEY, "1");
-  } else {
-    window.localStorage.removeItem(PREVIEW_WIDGET_ENABLED_KEY);
-  }
-  return Boolean(enabled);
-}
-
-export async function openMainPanel() {
-  if (isTauriRuntime()) return invoke("open_main_panel");
 }
 
 export function subscribeTasksChanged(handler) {

@@ -3,17 +3,13 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": [
-    "main",
-    "widget"
+    "main"
   ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
-    "core:window:allow-set-always-on-bottom",
     "core:window:allow-show",
     "core:window:allow-hide",
-    "core:window:allow-close",
-    "core:window:allow-set-focus",
-    "core:webview:allow-create-webview-window"
+    "core:window:allow-set-focus"
   ]
 }

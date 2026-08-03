@@ -5,7 +5,14 @@ import {
   MagnifyingGlass,
   PushPinSimple,
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { DeleteConfirm } from "./components/DeleteConfirm";
 import { ReminderEditor } from "./components/ReminderEditor";
@@ -20,7 +27,6 @@ import {
   enableAutostart,
   getGlobalShortcut,
   getPanelPinned,
-  getWidgetEnabled,
   hidePanel,
   isAutostartEnabled,
   listTasks,
@@ -28,7 +34,6 @@ import {
   setPanelPinned,
   setReminder,
   setShortcutRecording,
-  setWidgetEnabled,
   subscribePanelShown,
   subscribeTasksChanged,
   toggleTask,
@@ -102,8 +107,6 @@ export function App() {
   const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
   const [isPanelPinned, setIsPanelPinned] = useState(null);
   const [panelPinPending, setPanelPinPending] = useState(false);
-  const [widgetEnabled, setWidgetEnabledState] = useState(null);
-  const [widgetPending, setWidgetPending] = useState(false);
   // null while the OS registration state is loading for the open settings panel.
   const [autostartEnabled, setAutostartEnabled] = useState(null);
   const [autostartPending, setAutostartPending] = useState(false);
@@ -159,15 +162,6 @@ export function App() {
       .catch((reason) => {
         setIsPanelPinned(false);
         setError(`无法读取钉板状态：${String(reason)}`);
-      });
-  }, []);
-
-  useEffect(() => {
-    getWidgetEnabled()
-      .then((enabled) => setWidgetEnabledState(Boolean(enabled)))
-      .catch((reason) => {
-        setWidgetEnabledState(false);
-        setError(`无法读取桌面组件状态：${String(reason)}`);
       });
   }, []);
 
@@ -235,6 +229,17 @@ export function App() {
   );
   const selectedTask = tasks.find((task) => task.id === selectedId) || null;
 
+  // Keep keyboard navigation coupled to the notes scrollport. The row can be
+  // selected while focus is still on the global window listener, so relying on
+  // browser focus scrolling leaves lower rows outside the bounded list.
+  useLayoutEffect(() => {
+    if (!isListNavigating || !selectedId) return;
+    const node = document.querySelector(`[data-task-id="${selectedId}"]`);
+    if (typeof node?.scrollIntoView === "function") {
+      node.scrollIntoView({ block: "nearest" });
+    }
+  }, [isListNavigating, selectedId]);
+
   async function handleCreate() {
     const title = draft.trim();
     if (!title || mode !== "normal") return;
@@ -260,22 +265,6 @@ export function App() {
       setError(`无法更新钉板状态：${String(reason)}`);
     } finally {
       setPanelPinPending(false);
-    }
-  }
-
-  async function handleWidgetToggle(desired) {
-    if (typeof widgetEnabled !== "boolean" || widgetPending) return;
-    if (widgetEnabled === desired) return;
-    const previous = widgetEnabled;
-    setWidgetPending(true);
-    try {
-      const applied = await setWidgetEnabled(desired);
-      setWidgetEnabledState(Boolean(applied));
-    } catch (reason) {
-      setWidgetEnabledState(previous);
-      setError(`无法更新桌面组件：${String(reason)}`);
-    } finally {
-      setWidgetPending(false);
     }
   }
 
@@ -955,33 +944,6 @@ export function App() {
             onAutostartChange={handleAutostartChange}
             onRetryAutostartLoad={loadAutostartState}
           />
-          <section
-            className="popover widget-settings-popover"
-            aria-label="桌面组件"
-          >
-            <div className="autostart-row">
-              <span>桌面组件</span>
-              {typeof widgetEnabled === "boolean" ? (
-                <input
-                  type="checkbox"
-                  role="switch"
-                  aria-label="启用桌面组件"
-                  checked={widgetEnabled}
-                  disabled={widgetPending}
-                  onChange={(event) =>
-                    handleWidgetToggle(event.target.checked)
-                  }
-                />
-              ) : (
-                <span className="shortcut-hint" role="status" aria-live="polite">
-                  读取中…
-                </span>
-              )}
-            </div>
-            <p className="shortcut-hint">
-              在桌面显示 240×340 轻量待办便签，始终置于普通窗口下面。
-            </p>
-          </section>
         </div>
       )}
 

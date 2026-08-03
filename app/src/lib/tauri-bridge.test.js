@@ -2,9 +2,7 @@ import { beforeEach, expect, it } from "vitest";
 
 import {
   getPanelPinned,
-  getWidgetEnabled,
   setPanelPinned,
-  setWidgetEnabled,
   subscribeTasksChanged,
   toggleTask,
 } from "./tauri-bridge";
@@ -22,13 +20,6 @@ it("persists the panel pin in browser preview and can clear it", async () => {
 
   expect(await setPanelPinned(false)).toBe(false);
   expect(await getPanelPinned()).toBe(false);
-});
-
-it("persists widget enabled in browser preview and defaults to off", async () => {
-  expect(await getWidgetEnabled()).toBe(false);
-  expect(await setWidgetEnabled(true)).toBe(true);
-  expect(await getWidgetEnabled()).toBe(true);
-  expect(await setWidgetEnabled(false)).toBe(false);
 });
 
 it("notifies tasks-changed subscribers after a preview mutation", async () => {

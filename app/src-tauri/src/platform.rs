@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{App, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{App, AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_window_state::{AppHandleExt, StateFlags, WindowExt};
@@ -17,10 +17,7 @@ use crate::window_position::{clamp_to_visible, MonitorBounds, Point, Size};
 
 const REMINDER_POLL_INTERVAL: Duration = Duration::from_secs(15);
 const FOCUS_LOSS_HIDE_DELAY: Duration = Duration::from_millis(200);
-pub const WIDGET_LABEL: &str = "widget";
 pub const MAIN_LABEL: &str = "main";
-const WIDGET_WIDTH: f64 = 240.0;
-const WIDGET_HEIGHT: f64 = 340.0;
 
 #[derive(Default)]
 pub struct WindowState {
@@ -136,35 +133,13 @@ pub fn conceal_panel(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn widget_window_exists(app: &AppHandle) -> bool {
-    app.get_webview_window(WIDGET_LABEL).is_some()
-}
-
-/// Whether process-level hide is safe after concealing `main`.
-///
-/// On macOS, `app.hide()` hides every window in the accessory process. When the
-/// opt-in desktop widget window exists, only `main` may be hidden or the sticky
-/// disappears even though `widgetEnabled` remains true.
-pub fn should_hide_application_with_panel(widget_window_exists: bool) -> bool {
-    !widget_window_exists
-}
-
-/// macOS accessory apps stay process-hidden after `app.hide()`. Showing only a
-/// child window is not enough — the application must be unhidden first.
-pub fn widget_show_requires_app_unhide() -> bool {
-    cfg!(target_os = "macos")
-}
-
 /// Hides the panel and, on macOS, hands the keyboard focus back to whichever
 /// application the user came from instead of leaving the menu bar app active.
-/// When the desktop widget window exists, only `main` is hidden.
 pub fn hide_panel(app: &AppHandle) -> tauri::Result<()> {
     conceal_panel(app)?;
 
     #[cfg(target_os = "macos")]
-    if should_hide_application_with_panel(widget_window_exists(app)) {
-        app.hide()?;
-    }
+    app.hide()?;
 
     Ok(())
 }
@@ -174,7 +149,7 @@ pub fn save_panel_position(app: &AppHandle) {
 }
 
 pub fn save_window_positions(app: &AppHandle) {
-    // Plugin persists each labeled window (main + widget) by its label.
+    // The plugin persists the main panel position by its window label.
     if let Err(error) = app.save_window_state(StateFlags::POSITION) {
         log::error!("failed to save window positions: {error}");
     }
@@ -189,97 +164,6 @@ pub fn toggle_panel(app: &AppHandle) -> tauri::Result<()> {
         hide_panel(app)
     } else {
         show_panel(app)
-    }
-}
-
-/// Desired desktop-widget window policy used by tests and builders.
-pub fn widget_window_policy() -> WidgetWindowPolicy {
-    WidgetWindowPolicy {
-        label: WIDGET_LABEL,
-        width: WIDGET_WIDTH,
-        height: WIDGET_HEIGHT,
-        always_on_bottom: true,
-        always_on_top: false,
-        skip_taskbar: true,
-        decorations: false,
-        resizable: false,
-        focused_on_create: false,
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct WidgetWindowPolicy {
-    pub label: &'static str,
-    pub width: f64,
-    pub height: f64,
-    pub always_on_bottom: bool,
-    pub always_on_top: bool,
-    pub skip_taskbar: bool,
-    pub decorations: bool,
-    pub resizable: bool,
-    pub focused_on_create: bool,
-}
-
-/// Creates or shows the opt-in desktop widget. Idempotent when already open.
-pub fn ensure_widget_window(app: &AppHandle) -> tauri::Result<()> {
-    // Accessory + prior app.hide() leaves the process invisible; unhide first so
-    // the desktop sticky can actually appear at the always-on-bottom level.
-    if widget_show_requires_app_unhide() {
-        #[cfg(target_os = "macos")]
-        app.show()?;
-    }
-
-    if let Some(window) = app.get_webview_window(WIDGET_LABEL) {
-        window.show()?;
-        let _ = window.set_always_on_bottom(true);
-        let _ = window.set_always_on_top(false);
-        return Ok(());
-    }
-
-    let policy = widget_window_policy();
-    let window = WebviewWindowBuilder::new(
-        app,
-        policy.label,
-        WebviewUrl::App("index.html?window=widget".into()),
-    )
-    .title("Eternal 桌面组件")
-    .inner_size(policy.width, policy.height)
-    .min_inner_size(policy.width, policy.height)
-    .max_inner_size(policy.width, policy.height)
-    .resizable(policy.resizable)
-    .decorations(policy.decorations)
-    .transparent(true)
-    .always_on_bottom(policy.always_on_bottom)
-    .always_on_top(policy.always_on_top)
-    .skip_taskbar(policy.skip_taskbar)
-    .visible(false)
-    .focused(policy.focused_on_create)
-    .build()?;
-
-    let _ = window.restore_state(StateFlags::POSITION);
-    clamp_panel_position(&window)?;
-    window.show()?;
-    let _ = window.set_always_on_bottom(true);
-    let _ = window.set_always_on_top(false);
-    Ok(())
-}
-
-/// Hides and destroys the widget window after persisting its position.
-pub fn close_widget_window(app: &AppHandle) -> tauri::Result<()> {
-    let Some(window) = app.get_webview_window(WIDGET_LABEL) else {
-        return Ok(());
-    };
-    save_window_positions(app);
-    window.hide()?;
-    window.close()?;
-    Ok(())
-}
-
-pub fn set_widget_visible(app: &AppHandle, enabled: bool) -> tauri::Result<()> {
-    if enabled {
-        ensure_widget_window(app)
-    } else {
-        close_widget_window(app)
     }
 }
 
@@ -383,25 +267,13 @@ pub fn cancel_focus_loss_hide(window: &tauri::Window) {
 pub fn setup_desktop(
     app: &mut App,
     show_initial_panel: bool,
-    widget_enabled: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
     let show_item = MenuItem::with_id(app, "show", "显示 Eternal", true, None::<&str>)?;
-    let widget_item = MenuItem::with_id(
-        app,
-        "toggle-widget",
-        if widget_enabled {
-            "隐藏桌面组件"
-        } else {
-            "显示桌面组件"
-        },
-        true,
-        None::<&str>,
-    )?;
     let quit_item = MenuItem::with_id(app, "quit", "退出 Eternal", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_item, &widget_item, &quit_item])?;
+    let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
     let mut tray = TrayIconBuilder::with_id("eternal")
         .tooltip("Eternal 待办")
@@ -411,21 +283,6 @@ pub fn setup_desktop(
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => {
                 let _ = show_panel(app);
-            }
-            "toggle-widget" => {
-                if let Some(settings) = app.try_state::<crate::commands::SettingsState>() {
-                    let currently = settings.widget_enabled().unwrap_or(false);
-                    let desired = !currently;
-                    match settings.set_widget_enabled(desired) {
-                        Ok(_) => {
-                            if let Err(error) = set_widget_visible(app, desired) {
-                                log::error!("failed to toggle widget from tray: {error}");
-                                let _ = settings.set_widget_enabled(currently);
-                            }
-                        }
-                        Err(error) => log::error!("failed to persist widget setting: {error}"),
-                    }
-                }
             }
             "quit" => app.exit(0),
             _ => {}
@@ -457,11 +314,6 @@ pub fn setup_desktop(
     }
 
     start_reminder_scheduler(app.handle().clone());
-    if widget_enabled {
-        if let Err(error) = ensure_widget_window(app.handle()) {
-            log::error!("failed to open desktop widget on startup: {error}");
-        }
-    }
     if show_initial_panel {
         show_panel(app.handle())?;
     }
@@ -592,43 +444,5 @@ mod tests {
 
         assert!(state.is_pinned());
         assert!(!state.take_pending_auto_hide(token));
-    }
-
-    #[test]
-    fn desktop_widget_policy_is_always_on_bottom_and_compact() {
-        let policy = super::widget_window_policy();
-        assert_eq!(policy.label, "widget");
-        assert_eq!(policy.width, 240.0);
-        assert_eq!(policy.height, 340.0);
-        assert!(policy.always_on_bottom);
-        assert!(!policy.always_on_top);
-        assert!(policy.skip_taskbar);
-        assert!(!policy.decorations);
-        assert!(!policy.resizable);
-        assert!(!policy.focused_on_create);
-    }
-
-    #[test]
-    fn macos_panel_hide_keeps_the_process_alive_while_the_widget_window_exists() {
-        // Enabled sticky present: process hide would yank the desktop layer window.
-        assert!(!super::should_hide_application_with_panel(true));
-        // Disabled / closed: macOS may hand focus back via app.hide().
-        assert!(super::should_hide_application_with_panel(false));
-    }
-
-    #[test]
-    fn widget_show_policy_unhides_accessory_app_on_macos_only() {
-        assert_eq!(
-            super::widget_show_requires_app_unhide(),
-            cfg!(target_os = "macos")
-        );
-    }
-
-    #[test]
-    fn desktop_widget_layer_never_defaults_to_always_on_top() {
-        let policy = super::widget_window_policy();
-        assert!(policy.always_on_bottom);
-        assert!(!policy.always_on_top);
-        assert_ne!(policy.always_on_bottom, policy.always_on_top);
     }
 }

@@ -15,7 +15,7 @@ use autostart_config::{should_show_initial_panel, AUTOSTART_FLAG};
 use commands::{AppState, SettingsState};
 use platform::{
     cancel_focus_loss_hide, hide_panel, now_ms, register_global_shortcut, schedule_focus_loss_hide,
-    setup_desktop, show_panel, WindowState, MAIN_LABEL,
+    setup_desktop, show_panel, WindowState,
 };
 use repository::{secondary_instance_should_focus_existing_main, TaskRepository};
 use service::TaskService;
@@ -75,7 +75,6 @@ pub fn run() {
                 SettingsRepository::load_or_default(app_data_dir.join("settings.json"));
             let stored_shortcut = settings.global_shortcut().to_string();
             let panel_pinned = settings.panel_pinned();
-            let widget_enabled = settings.widget_enabled();
 
             let active_shortcut =
                 match register_global_shortcut(app.handle(), &stored_shortcut) {
@@ -111,7 +110,7 @@ pub fn run() {
             }
 
             let show_initial_panel = should_show_initial_panel(std::env::args());
-            setup_desktop(app, show_initial_panel, widget_enabled)
+            setup_desktop(app, show_initial_panel)
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_tasks,
@@ -121,23 +120,13 @@ pub fn run() {
             commands::set_reminder,
             commands::clear_reminder,
             commands::hide_panel,
-            commands::open_main_panel,
             commands::get_global_shortcut,
             commands::set_global_shortcut,
             commands::set_shortcut_recording,
             commands::get_panel_pinned,
             commands::set_panel_pinned,
-            commands::get_widget_enabled,
-            commands::set_widget_enabled,
         ])
         .on_window_event(|window, event| {
-            // Focus-loss concealment applies only to the main panel, never the widget.
-            if window.label() != MAIN_LABEL {
-                if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
-                    // Widget close is handled by commands that also persist widgetEnabled.
-                }
-                return;
-            }
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();

@@ -7,8 +7,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::model::Task;
 use crate::platform::{
-    apply_global_shortcut, hide_panel as hide_desktop_panel, revert_global_shortcut,
-    set_widget_visible, show_panel, WindowState,
+    apply_global_shortcut, hide_panel as hide_desktop_panel, revert_global_shortcut, WindowState,
 };
 use crate::service::TaskService;
 use crate::settings::SettingsRepository;
@@ -74,26 +73,6 @@ impl SettingsState {
             .map_err(|error| format!("钉板设置未能保存：{error}"))?;
         window_state.set_pinned(pinned);
         Ok(pinned)
-    }
-
-    pub fn widget_enabled(&self) -> Result<bool, String> {
-        let runtime = self
-            .runtime
-            .lock()
-            .map_err(|_| "设置暂时不可用".to_string())?;
-        Ok(runtime.settings.widget_enabled())
-    }
-
-    pub fn set_widget_enabled(&self, enabled: bool) -> Result<bool, String> {
-        let mut runtime = self
-            .runtime
-            .lock()
-            .map_err(|_| "设置暂时不可用".to_string())?;
-        runtime
-            .settings
-            .set_widget_enabled(enabled)
-            .map_err(|error| format!("桌面组件设置未能保存：{error}"))?;
-        Ok(enabled)
     }
 }
 
@@ -269,32 +248,6 @@ pub fn set_panel_pinned(
 }
 
 #[tauri::command]
-pub fn get_widget_enabled(state: State<'_, SettingsState>) -> Result<bool, String> {
-    state.widget_enabled()
-}
-
-#[tauri::command]
-pub fn set_widget_enabled(
-    enabled: bool,
-    app: AppHandle,
-    settings: State<'_, SettingsState>,
-) -> Result<bool, String> {
-    let previous = settings.widget_enabled()?;
-    settings.set_widget_enabled(enabled)?;
-    if let Err(error) = set_widget_visible(&app, enabled) {
-        let _ = settings.set_widget_enabled(previous);
-        let _ = set_widget_visible(&app, previous);
-        return Err(format!("桌面组件未能更新：{error}"));
-    }
-    Ok(enabled)
-}
-
-#[tauri::command]
-pub fn open_main_panel(app: AppHandle) -> Result<(), String> {
-    show_panel(&app).map_err(|error| error.to_string())
-}
-
-#[tauri::command]
 pub fn hide_panel(app: AppHandle) -> Result<(), String> {
     hide_desktop_panel(&app).map_err(|error| error.to_string())
 }
@@ -349,16 +302,6 @@ mod tests {
         assert!(error.contains("无法") || !error.is_empty());
         assert!(!window_state.is_pinned());
         assert!(!state.panel_pinned().expect("read runtime state"));
-    }
-
-    #[test]
-    fn widget_setting_persists_and_defaults_false() {
-        let path = test_path("widget-success");
-        let state = SettingsState::new(SettingsRepository::load_or_default(path.clone()), None);
-
-        assert!(!state.widget_enabled().expect("default"));
-        assert!(state.set_widget_enabled(true).expect("save"));
-        assert!(SettingsRepository::load_or_default(path).widget_enabled());
     }
 
     #[test]

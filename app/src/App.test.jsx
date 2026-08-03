@@ -19,9 +19,6 @@ const bridge = vi.hoisted(() => ({
   setShortcutRecording: vi.fn(),
   getPanelPinned: vi.fn(),
   setPanelPinned: vi.fn(),
-  getWidgetEnabled: vi.fn(),
-  setWidgetEnabled: vi.fn(),
-  openMainPanel: vi.fn(),
   isAutostartEnabled: vi.fn(),
   enableAutostart: vi.fn(),
   disableAutostart: vi.fn(),
@@ -123,9 +120,6 @@ describe("Eternal task panel", () => {
     bridge.setShortcutRecording.mockResolvedValue(undefined);
     bridge.getPanelPinned.mockResolvedValue(false);
     bridge.setPanelPinned.mockImplementation(async (pinned) => pinned);
-    bridge.getWidgetEnabled.mockResolvedValue(false);
-    bridge.setWidgetEnabled.mockImplementation(async (enabled) => enabled);
-    bridge.openMainPanel.mockResolvedValue(undefined);
     bridge.isAutostartEnabled.mockResolvedValue(false);
     bridge.enableAutostart.mockResolvedValue(undefined);
     bridge.disableAutostart.mockResolvedValue(undefined);
@@ -164,6 +158,42 @@ describe("Eternal task panel", () => {
     expect(scrollBlock).toMatch(/min-height:\s*0/);
     expect(listBlock).not.toMatch(/overflow-y:\s*auto/);
     expect(listBlock).toMatch(/overflow:\s*visible|overflow-y:\s*visible/);
+  });
+
+  it("keeps the keyboard-selected row inside the notes scrollport", async () => {
+    const user = userEvent.setup();
+    const manyTasks = Array.from({ length: 24 }, (_, index) => ({
+      ...activeTask,
+      id: `long-${index}`,
+      title: `长列表任务 ${index}`,
+      createdAtMs: index,
+    }));
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    bridge.listTasks.mockResolvedValueOnce(manyTasks);
+
+    try {
+      render(<App />);
+      await screen.findByText("长列表任务 0");
+
+      await user.keyboard("{ArrowDown}{ArrowDown}");
+
+      await waitFor(() => {
+        expect(
+          document.querySelector(".task-row.is-selected")?.getAttribute(
+            "data-task-id",
+          ),
+        ).toBe("long-1");
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+      });
+    } finally {
+      if (originalScrollIntoView) {
+        HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      } else {
+        delete HTMLElement.prototype.scrollIntoView;
+      }
+    }
   });
 
   it("exposes the Eternal brand without making header actions draggable", async () => {
@@ -282,31 +312,15 @@ describe("Eternal task panel", () => {
     });
   });
 
-  it("enables the desktop widget only after the backend confirms", async () => {
-    let resolveWidget;
-    bridge.setWidgetEnabled.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveWidget = resolve;
-        }),
-    );
+  it("does not expose the unfinished webview widget control", async () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByText("提交周报");
 
     await user.click(screen.getByRole("button", { name: "打开设置" }));
-    const toggle = await screen.findByRole("switch", { name: "启用桌面组件" });
-    expect(toggle.checked).toBe(false);
 
-    await user.click(toggle);
-    expect(bridge.setWidgetEnabled).toHaveBeenCalledWith(true);
-    expect(toggle.disabled).toBe(true);
-
-    resolveWidget(true);
-    await waitFor(() => {
-      expect(toggle.checked).toBe(true);
-      expect(toggle.disabled).toBe(false);
-    });
+    expect(screen.queryByRole("region", { name: "桌面组件" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "启用桌面组件" })).toBeNull();
   });
 
   it("captures, completes, and searches tasks from one panel", async () => {

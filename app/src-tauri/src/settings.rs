@@ -17,8 +17,6 @@ struct SettingsFile {
     global_shortcut: String,
     #[serde(default)]
     panel_pinned: bool,
-    #[serde(default)]
-    widget_enabled: bool,
 }
 
 /// Durable panel preferences. Reading never fails: an unreadable or nonsensical
@@ -28,26 +26,22 @@ pub struct SettingsRepository {
     path: PathBuf,
     global_shortcut: String,
     panel_pinned: bool,
-    widget_enabled: bool,
 }
 
 impl SettingsRepository {
     pub fn load_or_default(path: PathBuf) -> Self {
-        let (global_shortcut, panel_pinned, widget_enabled) =
-            read_settings(&path).unwrap_or_else(|| {
-                (
-                    crate::shortcut::normalize(DEFAULT_SHORTCUT)
-                        .unwrap_or_else(|_| DEFAULT_SHORTCUT.to_string()),
-                    false,
-                    false,
-                )
-            });
+        let (global_shortcut, panel_pinned) = read_settings(&path).unwrap_or_else(|| {
+            (
+                crate::shortcut::normalize(DEFAULT_SHORTCUT)
+                    .unwrap_or_else(|_| DEFAULT_SHORTCUT.to_string()),
+                false,
+            )
+        });
 
         Self {
             path,
             global_shortcut,
             panel_pinned,
-            widget_enabled,
         }
     }
 
@@ -59,25 +53,15 @@ impl SettingsRepository {
         self.panel_pinned
     }
 
-    pub fn widget_enabled(&self) -> bool {
-        self.widget_enabled
-    }
-
     pub fn set_global_shortcut(&mut self, accelerator: String) -> Result<(), RepositoryError> {
-        self.write_settings(&accelerator, self.panel_pinned, self.widget_enabled)?;
+        self.write_settings(&accelerator, self.panel_pinned)?;
         self.global_shortcut = accelerator;
         Ok(())
     }
 
     pub fn set_panel_pinned(&mut self, pinned: bool) -> Result<(), RepositoryError> {
-        self.write_settings(&self.global_shortcut, pinned, self.widget_enabled)?;
+        self.write_settings(&self.global_shortcut, pinned)?;
         self.panel_pinned = pinned;
-        Ok(())
-    }
-
-    pub fn set_widget_enabled(&mut self, enabled: bool) -> Result<(), RepositoryError> {
-        self.write_settings(&self.global_shortcut, self.panel_pinned, enabled)?;
-        self.widget_enabled = enabled;
         Ok(())
     }
 
@@ -85,7 +69,6 @@ impl SettingsRepository {
         &self,
         global_shortcut: &str,
         panel_pinned: bool,
-        widget_enabled: bool,
     ) -> Result<(), RepositoryError> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
@@ -95,7 +78,6 @@ impl SettingsRepository {
             schema_version: SCHEMA_VERSION,
             global_shortcut: global_shortcut.to_string(),
             panel_pinned,
-            widget_enabled,
         };
         let mut file = AtomicWriteFile::open(&self.path)?;
         serde_json::to_writer_pretty(&mut file, &file_contents).map_err(RepositoryError::Encode)?;
@@ -108,11 +90,11 @@ impl SettingsRepository {
 
 /// Returns stored preferences only when the file is readable, parseable, and
 /// still describes a shortcut Eternal can register.
-fn read_settings(path: &Path) -> Option<(String, bool, bool)> {
+fn read_settings(path: &Path) -> Option<(String, bool)> {
     let bytes = fs::read(path).ok()?;
     let stored: SettingsFile = serde_json::from_slice(&bytes).ok()?;
     let shortcut = crate::shortcut::normalize(&stored.global_shortcut).ok()?;
-    Some((shortcut, stored.panel_pinned, stored.widget_enabled))
+    Some((shortcut, stored.panel_pinned))
 }
 
 #[cfg(test)]
@@ -152,16 +134,6 @@ mod tests {
     }
 
     #[test]
-    fn a_first_launch_starts_with_the_widget_disabled() {
-        let path = test_path("first-launch-widget");
-
-        let settings = SettingsRepository::load_or_default(path.clone());
-
-        assert!(!settings.widget_enabled());
-        assert!(!path.exists(), "reading must not create a settings file");
-    }
-
-    #[test]
     fn a_panel_pin_survives_restart_and_a_later_shortcut_change() {
         let path = test_path("pin-roundtrip");
         let mut settings = SettingsRepository::load_or_default(path.clone());
@@ -172,24 +144,6 @@ mod tests {
             .expect("save shortcut succeeds");
 
         let reloaded = SettingsRepository::load_or_default(path);
-        assert!(reloaded.panel_pinned());
-        assert_eq!(reloaded.global_shortcut(), "CommandOrControl+Alt+E");
-        assert!(!reloaded.widget_enabled());
-    }
-
-    #[test]
-    fn widget_enabled_survives_restart_without_losing_pin_or_shortcut() {
-        let path = test_path("widget-roundtrip");
-        let mut settings = SettingsRepository::load_or_default(path.clone());
-
-        settings.set_panel_pinned(true).expect("pin");
-        settings.set_widget_enabled(true).expect("widget");
-        settings
-            .set_global_shortcut("CommandOrControl+Alt+E".to_string())
-            .expect("shortcut");
-
-        let reloaded = SettingsRepository::load_or_default(path);
-        assert!(reloaded.widget_enabled());
         assert!(reloaded.panel_pinned());
         assert_eq!(reloaded.global_shortcut(), "CommandOrControl+Alt+E");
     }
@@ -206,23 +160,22 @@ mod tests {
         let settings = SettingsRepository::load_or_default(path);
 
         assert!(!settings.panel_pinned());
-        assert!(!settings.widget_enabled());
         assert_eq!(settings.global_shortcut(), "CommandOrControl+Alt+E");
     }
 
     #[test]
-    fn a_v2_settings_file_without_widget_defaults_to_disabled() {
+    fn a_legacy_settings_file_with_removed_widget_field_keeps_preferences() {
         let path = test_path("legacy-v2");
         fs::write(
             &path,
-            br#"{"schemaVersion":2,"globalShortcut":"CommandOrControl+Alt+E","panelPinned":true}"#,
+            br#"{"schemaVersion":2,"globalShortcut":"CommandOrControl+Alt+E","panelPinned":true,"widgetEnabled":true}"#,
         )
         .expect("write fixture");
 
         let settings = SettingsRepository::load_or_default(path);
 
         assert!(settings.panel_pinned());
-        assert!(!settings.widget_enabled());
+        assert_eq!(settings.global_shortcut(), "CommandOrControl+Alt+E");
     }
 
     #[test]
