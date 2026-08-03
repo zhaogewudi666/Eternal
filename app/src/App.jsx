@@ -34,6 +34,7 @@ import {
   toggleTask,
 } from "./lib/tauri-bridge";
 import {
+  DEFAULT_PIN_SHORTCUT,
   DEFAULT_SHORTCUT,
   acceleratorFromEvent,
   currentPlatform,
@@ -618,6 +619,17 @@ export function App() {
 
       const hasCommand = event.metaKey || event.ctrlKey;
 
+      if (
+        hasCommand &&
+        event.shiftKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === "p"
+      ) {
+        event.preventDefault();
+        handlePanelPinToggle();
+        return;
+      }
+
       if (mode === "reminder" || mode === "settings") {
         const isApplicationCommand =
           hasCommand &&
@@ -788,6 +800,7 @@ export function App() {
   }, [
     applyShortcut,
     handleDelete,
+    handlePanelPinToggle,
     handleToggle,
     isListNavigating,
     isRecordingShortcut,
@@ -846,8 +859,8 @@ export function App() {
             aria-pressed={Boolean(isPanelPinned)}
             title={
               isPanelPinned
-                ? "取消固定，失去焦点后自动收起"
-                : "固定面板，切换到其他应用时保持显示"
+                ? `取消固定，失去焦点后自动收起（${formatAccelerator(DEFAULT_PIN_SHORTCUT, platform)}）`
+                : `固定面板，切换到其他应用时保持显示（${formatAccelerator(DEFAULT_PIN_SHORTCUT, platform)}）`
             }
             disabled={isPanelPinned === null || panelPinPending}
             onClick={handlePanelPinToggle}
@@ -935,6 +948,7 @@ export function App() {
             isRecordingShortcut={isRecordingShortcut}
             onStartRecording={startRecording}
             onResetShortcut={() => applyShortcut(DEFAULT_SHORTCUT)}
+            pinShortcutLabel={formatAccelerator(DEFAULT_PIN_SHORTCUT, platform)}
             autostartEnabled={autostartEnabled}
             autostartPending={autostartPending}
             autostartError={autostartError}

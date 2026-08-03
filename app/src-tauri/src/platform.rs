@@ -136,20 +136,33 @@ pub fn conceal_panel(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn widget_is_visible(app: &AppHandle) -> bool {
-    app.get_webview_window(WIDGET_LABEL)
-        .and_then(|window| window.is_visible().ok())
-        .unwrap_or(false)
+fn widget_window_exists(app: &AppHandle) -> bool {
+    app.get_webview_window(WIDGET_LABEL).is_some()
+}
+
+/// Whether process-level hide is safe after concealing `main`.
+///
+/// On macOS, `app.hide()` hides every window in the accessory process. When the
+/// opt-in desktop widget window exists, only `main` may be hidden or the sticky
+/// disappears even though `widgetEnabled` remains true.
+pub fn should_hide_application_with_panel(widget_window_exists: bool) -> bool {
+    !widget_window_exists
+}
+
+/// macOS accessory apps stay process-hidden after `app.hide()`. Showing only a
+/// child window is not enough — the application must be unhidden first.
+pub fn widget_show_requires_app_unhide() -> bool {
+    cfg!(target_os = "macos")
 }
 
 /// Hides the panel and, on macOS, hands the keyboard focus back to whichever
 /// application the user came from instead of leaving the menu bar app active.
-/// When the desktop widget remains visible, only `main` is hidden.
+/// When the desktop widget window exists, only `main` is hidden.
 pub fn hide_panel(app: &AppHandle) -> tauri::Result<()> {
     conceal_panel(app)?;
 
     #[cfg(target_os = "macos")]
-    if !widget_is_visible(app) {
+    if should_hide_application_with_panel(widget_window_exists(app)) {
         app.hide()?;
     }
 
@@ -209,9 +222,17 @@ pub struct WidgetWindowPolicy {
 
 /// Creates or shows the opt-in desktop widget. Idempotent when already open.
 pub fn ensure_widget_window(app: &AppHandle) -> tauri::Result<()> {
+    // Accessory + prior app.hide() leaves the process invisible; unhide first so
+    // the desktop sticky can actually appear at the always-on-bottom level.
+    if widget_show_requires_app_unhide() {
+        #[cfg(target_os = "macos")]
+        app.show()?;
+    }
+
     if let Some(window) = app.get_webview_window(WIDGET_LABEL) {
         window.show()?;
         let _ = window.set_always_on_bottom(true);
+        let _ = window.set_always_on_top(false);
         return Ok(());
     }
 
@@ -229,6 +250,7 @@ pub fn ensure_widget_window(app: &AppHandle) -> tauri::Result<()> {
     .decorations(policy.decorations)
     .transparent(true)
     .always_on_bottom(policy.always_on_bottom)
+    .always_on_top(policy.always_on_top)
     .skip_taskbar(policy.skip_taskbar)
     .visible(false)
     .focused(policy.focused_on_create)
@@ -238,6 +260,7 @@ pub fn ensure_widget_window(app: &AppHandle) -> tauri::Result<()> {
     clamp_panel_position(&window)?;
     window.show()?;
     let _ = window.set_always_on_bottom(true);
+    let _ = window.set_always_on_top(false);
     Ok(())
 }
 
@@ -583,5 +606,29 @@ mod tests {
         assert!(!policy.decorations);
         assert!(!policy.resizable);
         assert!(!policy.focused_on_create);
+    }
+
+    #[test]
+    fn macos_panel_hide_keeps_the_process_alive_while_the_widget_window_exists() {
+        // Enabled sticky present: process hide would yank the desktop layer window.
+        assert!(!super::should_hide_application_with_panel(true));
+        // Disabled / closed: macOS may hand focus back via app.hide().
+        assert!(super::should_hide_application_with_panel(false));
+    }
+
+    #[test]
+    fn widget_show_policy_unhides_accessory_app_on_macos_only() {
+        assert_eq!(
+            super::widget_show_requires_app_unhide(),
+            cfg!(target_os = "macos")
+        );
+    }
+
+    #[test]
+    fn desktop_widget_layer_never_defaults_to_always_on_top() {
+        let policy = super::widget_window_policy();
+        assert!(policy.always_on_bottom);
+        assert!(!policy.always_on_top);
+        assert_ne!(policy.always_on_bottom, policy.always_on_top);
     }
 }

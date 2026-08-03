@@ -2,6 +2,10 @@
 /// validation, this module only captures and renders combinations.
 export const DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
 
+/// In-panel accelerator that toggles the main pin. Kept distinct from the global
+/// show/hide shortcut, search (⌘/Ctrl+F), and section jumps (⌘/Ctrl+1/2).
+export const DEFAULT_PIN_SHORTCUT = "CommandOrControl+Shift+P";
+
 const MODIFIER_KEYS = new Set([
   "Meta",
   "Control",

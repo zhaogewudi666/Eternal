@@ -7,6 +7,7 @@ export function SettingsPopover({
   isRecordingShortcut,
   onStartRecording,
   onResetShortcut,
+  pinShortcutLabel,
   autostartEnabled,
   autostartPending,
   autostartError,
@@ -93,6 +94,16 @@ export function SettingsPopover({
           role="status"
         >
           {status}
+        </p>
+      </section>
+
+      <section className="shortcut-section" aria-label="钉板快捷键">
+        <div className="shortcut-heading">
+          <strong>钉板快捷键</strong>
+        </div>
+        <p className="shortcut-hint" role="note">
+          {pinShortcutLabel || "CommandOrControl+Shift+P"}{" "}
+          切换固定面板。固定后切换应用不会自动收起；全局呼出快捷键不变。
         </p>
       </section>
 

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -153,6 +155,17 @@ describe("Eternal task panel", () => {
     }
   });
 
+  it("keeps one bounded scroll owner on the task list shell for long unfinished and completed rows", () => {
+    const css = readFileSync("src/styles.css", "utf8");
+    const scrollBlock = css.match(/\.task-scroll\s*\{[^}]+\}/)?.[0] || "";
+    const listBlock = css.match(/\.task-list\s*\{[^}]+\}/)?.[0] || "";
+
+    expect(scrollBlock).toMatch(/overflow-y:\s*auto/);
+    expect(scrollBlock).toMatch(/min-height:\s*0/);
+    expect(listBlock).not.toMatch(/overflow-y:\s*auto/);
+    expect(listBlock).toMatch(/overflow:\s*visible|overflow-y:\s*visible/);
+  });
+
   it("exposes the Eternal brand without making header actions draggable", async () => {
     render(<App />);
     await screen.findByText("提交周报");
@@ -211,6 +224,39 @@ describe("Eternal task panel", () => {
     await screen.findByText(/无法更新钉板状态.*磁盘只读/);
     expect(pin.getAttribute("aria-pressed")).toBe("false");
     expect(pin.disabled).toBe(false);
+  });
+
+  it("toggles the panel pin with CommandOrControl+Shift+P and keeps focus-loss semantics", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("button", { name: "固定面板" });
+
+    await user.keyboard("{Control>}{Shift>}p{/Shift}{/Control}");
+
+    await waitFor(() => {
+      expect(bridge.setPanelPinned).toHaveBeenCalledWith(true);
+    });
+    expect(
+      await screen.findByRole("button", { name: "取消固定面板" }),
+    ).toBeTruthy();
+
+    await user.keyboard("{Control>}{Shift>}p{/Shift}{/Control}");
+    await waitFor(() => {
+      expect(bridge.setPanelPinned).toHaveBeenCalledWith(false);
+    });
+    expect(await screen.findByRole("button", { name: "固定面板" })).toBeTruthy();
+  });
+
+  it("shows the dedicated pin shortcut in settings help", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("提交周报");
+
+    await user.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const pinHelp = await screen.findByRole("region", { name: "钉板快捷键" });
+    expect(pinHelp.textContent).toMatch(/⌘⇧P|Ctrl\+Shift\+P/);
+    expect(pinHelp.textContent).toMatch(/固定面板/);
   });
 
   it("opens without a selected task row until the user navigates", async () => {

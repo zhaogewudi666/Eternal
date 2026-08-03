@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_PIN_SHORTCUT,
   DEFAULT_SHORTCUT,
   acceleratorFromEvent,
   formatAccelerator,
@@ -76,6 +77,15 @@ describe("formatAccelerator", () => {
     );
     expect(formatAccelerator("CommandOrControl+Alt+E", "win32")).toBe(
       "Ctrl+Alt+E",
+    );
+  });
+
+  it("renders the dedicated pin shortcut distinctly from global show/hide", () => {
+    expect(DEFAULT_PIN_SHORTCUT).toBe("CommandOrControl+Shift+P");
+    expect(DEFAULT_PIN_SHORTCUT).not.toBe(DEFAULT_SHORTCUT);
+    expect(formatAccelerator(DEFAULT_PIN_SHORTCUT, "darwin")).toBe("⌘⇧P");
+    expect(formatAccelerator(DEFAULT_PIN_SHORTCUT, "win32")).toBe(
+      "Ctrl+Shift+P",
     );
   });
 

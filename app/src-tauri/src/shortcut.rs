@@ -181,7 +181,12 @@ pub fn normalize(input: &str) -> Result<String, ShortcutError> {
         }
     }
 
-    if key == "Escape" || (primary && !alt && !shift && matches!(key.as_str(), "1" | "2" | "F")) {
+    if key == "Escape"
+        || (primary && !alt && !shift && matches!(key.as_str(), "1" | "2" | "F"))
+        || (primary && shift && !alt && key == "P")
+    {
+        // ⌘/Ctrl+Shift+P is the in-panel pin toggle; keep the global show/hide
+        // accelerator free of that internal chord.
         return Err(ShortcutError::Reserved);
     }
 
@@ -421,6 +426,7 @@ mod tests {
             "CommandOrControl+2",
             "CommandOrControl+F",
             "CommandOrControl+Escape",
+            "CommandOrControl+Shift+P",
         ] {
             assert_eq!(normalize(accelerator), Err(ShortcutError::Reserved));
         }
@@ -428,6 +434,10 @@ mod tests {
         assert_eq!(
             normalize("CommandOrControl+Shift+F").expect("modified F is available"),
             "CommandOrControl+Shift+F"
+        );
+        assert_eq!(
+            normalize("CommandOrControl+Shift+Space").expect("global show/hide stays free"),
+            "CommandOrControl+Shift+Space"
         );
     }
 
