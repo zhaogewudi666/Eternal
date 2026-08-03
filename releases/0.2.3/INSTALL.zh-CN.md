@@ -4,8 +4,8 @@
 
 | 安装包 | 架构 | 说明 |
 |--------|------|------|
-| `Eternal-0.2.3-macOS-arm64.dmg` | Apple Silicon（arm64） | 标准 Tauri 端到端 DMG（`tauri build --bundles dmg`，无二进制补丁）；含 Eternal.app 与 Applications 快捷方式；载荷为 final-review-fixes 后当前源码 |
-| `Eternal-0.2.3-Windows-x64-Setup.exe` | Windows x64 | NSIS 当前用户安装，无需管理员权限；由 final-review-fixes 后源码经 cargo-xwin 交叉编译打包 |
+| `Eternal-0.2.3-macOS-arm64.dmg` | Apple Silicon（arm64） | 标准 Tauri 端到端 DMG（`tauri build --bundles dmg`，无二进制补丁）；含 Eternal.app 与 Applications 快捷方式；载荷为 `main` 功能提交 `8652a96` |
+| `Eternal-0.2.3-Windows-x64-Setup.exe` | Windows x64 | NSIS 当前用户安装，无需管理员权限；由 `main` 功能提交 `8652a96` 经 cargo-xwin 交叉编译打包 |
 
 两个安装包均为**未签名**测试包。请先用 `SHA256SUMS` 校验完整性，再安装。
 
@@ -22,12 +22,15 @@
 2. 本地包未使用 Apple Developer ID 签名，也未公证。第一次打开如果被 macOS 拦截，可右键点击 Eternal 后选“打开”，或在“系统设置”→“隐私与安全性”中选择“仍要打开”。
 3. 这个安装包仅适用于 Apple Silicon（M1/M2/M3/M4 系列）Mac。
 
-本目录中的 macOS DMG 与 Windows NSIS 安装包均由 **0.2.3 final-review-fixes 后的当前源码** 生成（含静默 autostart、未知态不渲染假关开关、键盘焦点清理）。macOS 包为标准 Tauri DMG（非 offset/payload 补丁产物）。请使用本目录 `SHA256SUMS` 校验，不要复用修复前或补丁版 DMG 的哈希。
+本目录中的 macOS DMG 与 Windows NSIS 安装包均由 **`main` 功能提交 `8652a96`** 生成（含钉板、桌面组件、初始选中修复、升级快照保护，以及此前的静默 autostart 与键盘焦点修复）。macOS 包为标准 Tauri DMG（非 offset/payload 补丁产物）。请使用本目录 `SHA256SUMS` 校验，不要复用旧版安装包的哈希。
 
 ## 0.2.3 要点
 
 - **圆角无边框窗口**：`shadow: false` + 透明画布，面板 14px 圆角。
 - **键盘流**：↓ 进入列表、↑ 回到捕获/搜索、不环绕、`/` 搜索（含按钮焦点）、行内可直接打字；从 focused 按钮 ↓ 进入列表后 Space/Enter 作用于高亮任务。
+- **主页面钉板**：默认关闭；开启后主页面失焦不自动收起，但不改变主窗口保持置顶的行为。
+- **桌面组件**：默认关闭；开启后显示在桌面层，不默认置顶，可从设置或托盘控制。
+- **升级防丢数据**：升级前自动复制任务文件到 `backups/`；快照失败、冲突或更高数据格式会进入写保护，避免旧数据被空列表覆盖。
 - **开机时启动 Eternal**（设置内开关，默认关闭）：
   - 官方 Tauri v2 autostart 插件 **2.5.1**（Cargo exact `=2.5.1`）；macOS `LaunchAgent`；注册参数 `--autostart`。
   - 开机自启**静默**：初始化托盘/快捷键/提醒，但**不**调用初始 `show_panel`/抢焦点。

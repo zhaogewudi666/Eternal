@@ -66,28 +66,28 @@ final result: passed (0.2.3 final-review-fixes; both installers rebuilt from pos
 
 Geometry and stacked list hierarchy remain the baseline; 0.2.3 supersedes footer copy, list wraparound, ArrowUp exit, `/` search, native shadow policy, and silent autostart. See prior sections in git history for 0.2.1 browser PNGs and 0.2.2 interaction groups.
 
-## Packaging (final artifacts)
+## Packaging (0.2.3 main feature artifacts)
 
-Artifacts under `releases/0.2.3/` rebuilt from **post final-review-fixes** source (2026-08-01). macOS DMG replaced the earlier nonstandard binary-patched image with a **standard Tauri end-to-end DMG** (no offset replace / no manual payload injection):
+Artifacts under `releases/0.2.3/` rebuilt from the `main` feature commit `8652a96` (2026-08-03), including the pin panel, desktop widget, initial-selection fix, and safe-upgrade snapshot guard. macOS DMG is a **standard Tauri end-to-end DMG** (no offset replace / no manual payload injection):
 
 | Artifact | Build path | Verification |
 |----------|------------|--------------|
-| `Eternal-0.2.3-Windows-x64-Setup.exe` | `npm run tauri build -- --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis --ci` with writable `CARGO_HOME` + `XWIN_CACHE_DIR` under `app/src-tauri/target/` | Unchanged final NSIS; `file` → PE32; size 3820697; SHA256 `2cc81d7630083171d87c477583915464498c0a5afeb9eeda5da7bb49c04905bf` |
-| `Eternal-0.2.3-macOS-arm64.dmg` | From repo root `app/`: `npm run tauri -- build --bundles dmg --ci` (Vite frontend + release `app` + ad-hoc sign identity `-` + `bundle_dmg.sh` / `hdiutil create`) | `hdiutil verify` VALID; mount layout `Eternal.app` + `Applications` symlink; mounted app **byte-identical** to standard source `target/release/bundle/macos/Eternal.app` (`diff -rq` + full file SHA256); `codesign --verify --deep --strict` OK source + mounted; arm64; version 0.2.3; `LSUIElement=true`; binary markers `index-C9aEWc-h.js`, `panel-shown`, `--autostart`; `file` → zlib compressed data; size 7235979 |
+| `Eternal-0.2.3-Windows-x64-Setup.exe` | `npm run tauri build -- --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis --ci` with writable `CARGO_HOME` + `XWIN_CACHE_DIR` under `app/src-tauri/target/` | Cross-compiled NSIS; `file` → PE32; size 3853895; SHA256 `4b30d70b8b563ecc739b16500ea1240064a35a02e668435650896bd686365c31` |
+| `Eternal-0.2.3-macOS-arm64.dmg` | From repo root `app/`: `npm run tauri -- build --bundles dmg --ci` (Vite frontend + release `app` + ad-hoc sign identity `-` + `bundle_dmg.sh` / `hdiutil create`) | `hdiutil verify` VALID; mount layout `Eternal.app` + `Applications` symlink; mounted app `codesign --verify --deep --strict` OK; arm64; version 0.2.3; `LSUIElement=true`; binary markers `index-C8mqktpd.js`, `panel-shown`, `--autostart`, pin/widget strings; `file` → zlib compressed data; size 7313039 |
 | `SHA256SUMS` | regenerated after standard DMG copy; Windows line preserved | `shasum -a 256 -c SHA256SUMS` both OK |
 | `INSTALL.zh-CN.md` | install notes for unsigned test packages | present |
 
-SHA256 (final):
+SHA256 (current main feature assets):
 
 ```
-caf1deecdccf48eeb1fd969206ec13d6fe0b710aecfd62214740d3b29ebc597b  Eternal-0.2.3-macOS-arm64.dmg
-2cc81d7630083171d87c477583915464498c0a5afeb9eeda5da7bb49c04905bf  Eternal-0.2.3-Windows-x64-Setup.exe
+44534d9fc91a881db1d8d023b09c580e54106de2a72e3188cc287a5259c688f7  Eternal-0.2.3-macOS-arm64.dmg
+4b30d70b8b563ecc739b16500ea1240064a35a02e668435650896bd686365c31  Eternal-0.2.3-Windows-x64-Setup.exe
 ```
 
 Notes:
 
 - Both packages remain **unsigned** test builds (ad-hoc macOS signing identity `-`; Windows signing skipped on non-Windows host).
 - macOS DMG is the standard Tauri UDZO image (app + Applications link). No binary-offset payload patching; Code Resources match the signed source app.
-- Packaged Mach-O SHA256 `05398d4df6a904179a36c4d20f900203e702b6e670a64145fffbcc8b2c238db5` (source app and mounted app identical).
+- Packaged Mach-O SHA256 `0e97b057f7f6e412eabaae46c54814073b06eb5e54a884761497d06231243765` (mounted app binary).
 - Gatekeeper “right-click Open” remains the expected path for unsigned local builds.
 - No DMG-pending claim remains: both installers are present, hashed, and traced to final-source binaries via standard bundling.
