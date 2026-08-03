@@ -6,7 +6,8 @@
     "linux"
   ],
   "windows": [
-    "main"
+    "main",
+    "widget"
   ],
   "permissions": [
     "global-shortcut:default",

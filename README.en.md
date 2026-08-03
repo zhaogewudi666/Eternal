@@ -49,6 +49,13 @@ Only these two targets are provided. There is no Intel Mac build and no universa
 - **Windows**: The installer is **not code-signed**. If SmartScreen shows “Windows protected your PC”, confirm the source, then choose **More info** → **Run anyway**. Installs for the current user; administrator rights are usually not required.
 - **macOS**: **Ad-hoc signed only** (no Apple Developer ID signature and not notarized). If Gatekeeper blocks the first launch, **Control-click → Open**, or allow it under **System Settings → Privacy & Security**. Apple Silicon (M-series) Macs only.
 
+### Upgrades and data safety
+
+- **Quit the old app before upgrading**. On macOS, open the new DMG, drag Eternal to Applications, and confirm replacement; on Windows, run the new installer over the existing per-user installation.
+- **Do not uninstall and delete the app-data directory first**. Program files are separate from task data; replacing the app package does not delete existing tasks, settings, or password-vault data.
+- Before a version upgrade, Eternal copies `tasks.json` into the app-data `backups/` directory and leaves the source in place. If a snapshot cannot be created, snapshots conflict, or the data format is newer, the app enters write-blocked mode instead of overwriting the original data with an empty list.
+- There is currently no automatic updater. Install new packages manually, and keep the old version closed so two versions never write the same data at once.
+
 ---
 
 ## What it does

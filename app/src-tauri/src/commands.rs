@@ -1,12 +1,14 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::model::Task;
 use crate::platform::{
     apply_global_shortcut, hide_panel as hide_desktop_panel, revert_global_shortcut,
+    set_widget_visible, show_panel, WindowState,
 };
 use crate::service::TaskService;
 use crate::settings::SettingsRepository;
@@ -14,13 +16,24 @@ use crate::shortcut::RecordingGate;
 
 pub struct AppState {
     pub(crate) service: Mutex<TaskService>,
+    tasks_revision: AtomicU64,
 }
 
 impl AppState {
     pub fn new(service: TaskService) -> Self {
         Self {
             service: Mutex::new(service),
+            tasks_revision: AtomicU64::new(0),
         }
+    }
+
+    pub fn tasks_revision(&self) -> u64 {
+        self.tasks_revision.load(Ordering::SeqCst)
+    }
+
+    pub fn bump_and_emit_tasks_changed(&self, app: &AppHandle) {
+        let revision = self.tasks_revision.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = app.emit("tasks-changed", TasksChangedPayload { revision });
     }
 }
 
@@ -37,6 +50,51 @@ impl SettingsState {
             }),
         }
     }
+
+    pub fn panel_pinned(&self) -> Result<bool, String> {
+        let runtime = self
+            .runtime
+            .lock()
+            .map_err(|_| "设置暂时不可用".to_string())?;
+        Ok(runtime.settings.panel_pinned())
+    }
+
+    pub fn set_panel_pinned(
+        &self,
+        pinned: bool,
+        window_state: &WindowState,
+    ) -> Result<bool, String> {
+        let mut runtime = self
+            .runtime
+            .lock()
+            .map_err(|_| "设置暂时不可用".to_string())?;
+        runtime
+            .settings
+            .set_panel_pinned(pinned)
+            .map_err(|error| format!("钉板设置未能保存：{error}"))?;
+        window_state.set_pinned(pinned);
+        Ok(pinned)
+    }
+
+    pub fn widget_enabled(&self) -> Result<bool, String> {
+        let runtime = self
+            .runtime
+            .lock()
+            .map_err(|_| "设置暂时不可用".to_string())?;
+        Ok(runtime.settings.widget_enabled())
+    }
+
+    pub fn set_widget_enabled(&self, enabled: bool) -> Result<bool, String> {
+        let mut runtime = self
+            .runtime
+            .lock()
+            .map_err(|_| "设置暂时不可用".to_string())?;
+        runtime
+            .settings
+            .set_widget_enabled(enabled)
+            .map_err(|error| format!("桌面组件设置未能保存：{error}"))?;
+        Ok(enabled)
+    }
 }
 
 struct ShortcutRuntime {
@@ -49,6 +107,12 @@ struct ShortcutRuntime {
 pub struct GlobalShortcutStatus {
     accelerator: String,
     registered: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TasksChangedPayload {
+    revision: u64,
 }
 
 fn now_ms() -> Result<i64, String> {
@@ -75,15 +139,23 @@ pub fn list_tasks(state: State<'_, AppState>) -> Result<Vec<Task>, String> {
 }
 
 #[tauri::command]
-pub fn create_task(title: String, state: State<'_, AppState>) -> Result<Task, String> {
+pub fn create_task(
+    title: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Task, String> {
     let timestamp = now_ms()?;
-    with_service(&state, |service| service.create(&title, timestamp))
+    let task = with_service(&state, |service| service.create(&title, timestamp))?;
+    state.bump_and_emit_tasks_changed(&app);
+    Ok(task)
 }
 
 #[tauri::command]
-pub fn toggle_task(id: String, state: State<'_, AppState>) -> Result<Task, String> {
+pub fn toggle_task(id: String, app: AppHandle, state: State<'_, AppState>) -> Result<Task, String> {
     let timestamp = now_ms()?;
-    with_service(&state, |service| service.toggle(&id, timestamp))
+    let task = with_service(&state, |service| service.toggle(&id, timestamp))?;
+    state.bump_and_emit_tasks_changed(&app);
+    Ok(task)
 }
 
 #[tauri::command]
@@ -91,21 +163,32 @@ pub fn set_reminder(
     id: String,
     next_at_ms: i64,
     repeat_every_minutes: Option<u32>,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Task, String> {
-    with_service(&state, |service| {
+    let task = with_service(&state, |service| {
         service.set_reminder(&id, next_at_ms, repeat_every_minutes)
-    })
+    })?;
+    state.bump_and_emit_tasks_changed(&app);
+    Ok(task)
 }
 
 #[tauri::command]
-pub fn clear_reminder(id: String, state: State<'_, AppState>) -> Result<Task, String> {
-    with_service(&state, |service| service.clear_reminder(&id))
+pub fn clear_reminder(
+    id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Task, String> {
+    let task = with_service(&state, |service| service.clear_reminder(&id))?;
+    state.bump_and_emit_tasks_changed(&app);
+    Ok(task)
 }
 
 #[tauri::command]
-pub fn delete_task(id: String, state: State<'_, AppState>) -> Result<(), String> {
-    with_service(&state, |service| service.delete(&id))
+pub fn delete_task(id: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    with_service(&state, |service| service.delete(&id))?;
+    state.bump_and_emit_tasks_changed(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -172,6 +255,129 @@ pub fn set_shortcut_recording(recording: bool, gate: State<'_, RecordingGate>) {
 }
 
 #[tauri::command]
+pub fn get_panel_pinned(state: State<'_, SettingsState>) -> Result<bool, String> {
+    state.panel_pinned()
+}
+
+#[tauri::command]
+pub fn set_panel_pinned(
+    pinned: bool,
+    settings: State<'_, SettingsState>,
+    window_state: State<'_, WindowState>,
+) -> Result<bool, String> {
+    settings.set_panel_pinned(pinned, &window_state)
+}
+
+#[tauri::command]
+pub fn get_widget_enabled(state: State<'_, SettingsState>) -> Result<bool, String> {
+    state.widget_enabled()
+}
+
+#[tauri::command]
+pub fn set_widget_enabled(
+    enabled: bool,
+    app: AppHandle,
+    settings: State<'_, SettingsState>,
+) -> Result<bool, String> {
+    let previous = settings.widget_enabled()?;
+    settings.set_widget_enabled(enabled)?;
+    if let Err(error) = set_widget_visible(&app, enabled) {
+        let _ = settings.set_widget_enabled(previous);
+        let _ = set_widget_visible(&app, previous);
+        return Err(format!("桌面组件未能更新：{error}"));
+    }
+    Ok(enabled)
+}
+
+#[tauri::command]
+pub fn open_main_panel(app: AppHandle) -> Result<(), String> {
+    show_panel(&app).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn hide_panel(app: AppHandle) -> Result<(), String> {
     hide_desktop_panel(&app).map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::sync::atomic::Ordering;
+
+    use crate::model::Task;
+    use crate::platform::WindowState;
+    use crate::repository::TaskRepository;
+    use crate::service::TaskService;
+    use crate::settings::SettingsRepository;
+
+    use super::{AppState, SettingsState};
+
+    fn test_path(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "eternal-command-settings-{name}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).expect("create test directory");
+        root.join("settings.json")
+    }
+
+    #[test]
+    fn saving_a_pin_updates_runtime_only_after_it_is_durable() {
+        let path = test_path("pin-success");
+        let state = SettingsState::new(SettingsRepository::load_or_default(path.clone()), None);
+        let window_state = WindowState::new(false);
+
+        assert!(state
+            .set_panel_pinned(true, &window_state)
+            .expect("pin save succeeds"));
+
+        assert!(window_state.is_pinned());
+        assert!(SettingsRepository::load_or_default(path).panel_pinned());
+    }
+
+    #[test]
+    fn a_failed_pin_save_keeps_the_runtime_state_unchanged() {
+        let unwritable_path = test_path("pin-failure-parent");
+        fs::create_dir_all(&unwritable_path).expect("make settings path a directory");
+        let state = SettingsState::new(SettingsRepository::load_or_default(unwritable_path), None);
+        let window_state = WindowState::new(false);
+
+        let error = state
+            .set_panel_pinned(true, &window_state)
+            .expect_err("directory cannot be replaced by settings file");
+
+        assert!(error.contains("无法") || !error.is_empty());
+        assert!(!window_state.is_pinned());
+        assert!(!state.panel_pinned().expect("read runtime state"));
+    }
+
+    #[test]
+    fn widget_setting_persists_and_defaults_false() {
+        let path = test_path("widget-success");
+        let state = SettingsState::new(SettingsRepository::load_or_default(path.clone()), None);
+
+        assert!(!state.widget_enabled().expect("default"));
+        assert!(state.set_widget_enabled(true).expect("save"));
+        assert!(SettingsRepository::load_or_default(path).widget_enabled());
+    }
+
+    #[test]
+    fn task_mutations_bump_a_monotonic_revision() {
+        let root =
+            std::env::temp_dir().join(format!("eternal-command-revision-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("dir");
+        let repository = TaskRepository::empty(root.join("tasks.json"));
+        let state = AppState::new(TaskService::new(repository));
+        assert_eq!(state.tasks_revision(), 0);
+
+        {
+            let mut service = state.service.lock().expect("lock");
+            let _ = service.create("修订", 1).expect("create");
+        }
+        state.tasks_revision.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(state.tasks_revision(), 1);
+
+        let _tasks: Vec<Task> = state.service.lock().expect("lock").list();
+        assert_eq!(state.tasks_revision(), 1);
+    }
 }

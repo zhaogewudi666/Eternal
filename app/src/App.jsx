@@ -3,6 +3,7 @@ import {
   GearSix,
   Infinity,
   MagnifyingGlass,
+  PushPinSimple,
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -18,13 +19,18 @@ import {
   disableAutostart,
   enableAutostart,
   getGlobalShortcut,
+  getPanelPinned,
+  getWidgetEnabled,
   hidePanel,
   isAutostartEnabled,
   listTasks,
   setGlobalShortcut,
+  setPanelPinned,
   setReminder,
   setShortcutRecording,
+  setWidgetEnabled,
   subscribePanelShown,
+  subscribeTasksChanged,
   toggleTask,
 } from "./lib/tauri-bridge";
 import {
@@ -93,6 +99,10 @@ export function App() {
   const [shortcut, setShortcut] = useState(null);
   const [shortcutError, setShortcutError] = useState("");
   const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
+  const [isPanelPinned, setIsPanelPinned] = useState(null);
+  const [panelPinPending, setPanelPinPending] = useState(false);
+  const [widgetEnabled, setWidgetEnabledState] = useState(null);
+  const [widgetPending, setWidgetPending] = useState(false);
   // null while the OS registration state is loading for the open settings panel.
   const [autostartEnabled, setAutostartEnabled] = useState(null);
   const [autostartPending, setAutostartPending] = useState(false);
@@ -118,7 +128,10 @@ export function App() {
     listTasks()
       .then((loadedTasks) => {
         setTasks(loadedTasks);
-        setSelectedId(loadedTasks.find((task) => !task.completed)?.id || null);
+        // Opening must not pre-select a row; keyboard visual selection starts
+        // only after the user navigates the list or clicks a task.
+        setSelectedId(null);
+        setIsListNavigating(false);
       })
       .catch((reason) => setError(String(reason)));
   }, []);
@@ -138,6 +151,36 @@ export function App() {
         setShortcutError(`无法读取全局快捷键：${String(reason)}`),
       );
   }, [platform]);
+
+  useEffect(() => {
+    getPanelPinned()
+      .then((pinned) => setIsPanelPinned(Boolean(pinned)))
+      .catch((reason) => {
+        setIsPanelPinned(false);
+        setError(`无法读取钉板状态：${String(reason)}`);
+      });
+  }, []);
+
+  useEffect(() => {
+    getWidgetEnabled()
+      .then((enabled) => setWidgetEnabledState(Boolean(enabled)))
+      .catch((reason) => {
+        setWidgetEnabledState(false);
+        setError(`无法读取桌面组件状态：${String(reason)}`);
+      });
+  }, []);
+
+  useEffect(() => {
+    let localRevision = 0;
+    return subscribeTasksChanged((payload) => {
+      const revision = Number(payload?.revision || 0);
+      if (revision <= localRevision) return;
+      localRevision = revision;
+      listTasks()
+        .then((loadedTasks) => setTasks(loadedTasks))
+        .catch((reason) => setError(String(reason)));
+    });
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -202,6 +245,36 @@ export function App() {
       setDraft("");
     } catch (reason) {
       setError(String(reason));
+    }
+  }
+
+  async function handlePanelPinToggle() {
+    if (typeof isPanelPinned !== "boolean" || panelPinPending) return;
+    const requested = !isPanelPinned;
+    setPanelPinPending(true);
+    try {
+      const applied = await setPanelPinned(requested);
+      setIsPanelPinned(Boolean(applied));
+    } catch (reason) {
+      setError(`无法更新钉板状态：${String(reason)}`);
+    } finally {
+      setPanelPinPending(false);
+    }
+  }
+
+  async function handleWidgetToggle(desired) {
+    if (typeof widgetEnabled !== "boolean" || widgetPending) return;
+    if (widgetEnabled === desired) return;
+    const previous = widgetEnabled;
+    setWidgetPending(true);
+    try {
+      const applied = await setWidgetEnabled(desired);
+      setWidgetEnabledState(Boolean(applied));
+    } catch (reason) {
+      setWidgetEnabledState(previous);
+      setError(`无法更新桌面组件：${String(reason)}`);
+    } finally {
+      setWidgetPending(false);
     }
   }
 
@@ -767,6 +840,24 @@ export function App() {
         </div>
         <div className="header-actions">
           <button
+            className={`icon-button panel-pin ${isPanelPinned ? "is-active" : ""}`}
+            type="button"
+            aria-label={isPanelPinned ? "取消固定面板" : "固定面板"}
+            aria-pressed={Boolean(isPanelPinned)}
+            title={
+              isPanelPinned
+                ? "取消固定，失去焦点后自动收起"
+                : "固定面板，切换到其他应用时保持显示"
+            }
+            disabled={isPanelPinned === null || panelPinPending}
+            onClick={handlePanelPinToggle}
+          >
+            <PushPinSimple
+              size={20}
+              weight={isPanelPinned ? "fill" : "regular"}
+            />
+          </button>
+          <button
             className="icon-button"
             type="button"
             aria-label="搜索"
@@ -830,23 +921,54 @@ export function App() {
       </div>
 
       {mode === "settings" && (
-        <SettingsPopover
-          theme={theme}
-          onThemeChange={setTheme}
-          onClose={closeSettings}
-          shortcutLabel={
-            shortcut === null ? "读取中…" : formatAccelerator(shortcut, platform)
-          }
-          shortcutError={shortcutError}
-          isRecordingShortcut={isRecordingShortcut}
-          onStartRecording={startRecording}
-          onResetShortcut={() => applyShortcut(DEFAULT_SHORTCUT)}
-          autostartEnabled={autostartEnabled}
-          autostartPending={autostartPending}
-          autostartError={autostartError}
-          onAutostartChange={handleAutostartChange}
-          onRetryAutostartLoad={loadAutostartState}
-        />
+        <div className="settings-stack">
+          <SettingsPopover
+            theme={theme}
+            onThemeChange={setTheme}
+            onClose={closeSettings}
+            shortcutLabel={
+              shortcut === null
+                ? "读取中…"
+                : formatAccelerator(shortcut, platform)
+            }
+            shortcutError={shortcutError}
+            isRecordingShortcut={isRecordingShortcut}
+            onStartRecording={startRecording}
+            onResetShortcut={() => applyShortcut(DEFAULT_SHORTCUT)}
+            autostartEnabled={autostartEnabled}
+            autostartPending={autostartPending}
+            autostartError={autostartError}
+            onAutostartChange={handleAutostartChange}
+            onRetryAutostartLoad={loadAutostartState}
+          />
+          <section
+            className="popover widget-settings-popover"
+            aria-label="桌面组件"
+          >
+            <div className="autostart-row">
+              <span>桌面组件</span>
+              {typeof widgetEnabled === "boolean" ? (
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label="启用桌面组件"
+                  checked={widgetEnabled}
+                  disabled={widgetPending}
+                  onChange={(event) =>
+                    handleWidgetToggle(event.target.checked)
+                  }
+                />
+              ) : (
+                <span className="shortcut-hint" role="status" aria-live="polite">
+                  读取中…
+                </span>
+              )}
+            </div>
+            <p className="shortcut-hint">
+              在桌面显示 240×340 轻量待办便签，始终置于普通窗口下面。
+            </p>
+          </section>
+        </div>
       )}
 
       {mode === "reminder" && selectedTask && (

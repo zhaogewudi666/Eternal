@@ -15,6 +15,11 @@ const bridge = vi.hoisted(() => ({
   getGlobalShortcut: vi.fn(),
   setGlobalShortcut: vi.fn(),
   setShortcutRecording: vi.fn(),
+  getPanelPinned: vi.fn(),
+  setPanelPinned: vi.fn(),
+  getWidgetEnabled: vi.fn(),
+  setWidgetEnabled: vi.fn(),
+  openMainPanel: vi.fn(),
   isAutostartEnabled: vi.fn(),
   enableAutostart: vi.fn(),
   disableAutostart: vi.fn(),
@@ -26,7 +31,16 @@ const bridge = vi.hoisted(() => ({
       }
     };
   }),
+  subscribeTasksChanged: vi.fn((handler) => {
+    bridge._tasksChangedHandler = handler;
+    return () => {
+      if (bridge._tasksChangedHandler === handler) {
+        bridge._tasksChangedHandler = null;
+      }
+    };
+  }),
   _panelShownHandler: null,
+  _tasksChangedHandler: null,
 }));
 
 vi.mock("./lib/tauri-bridge", () => bridge);
@@ -105,15 +119,29 @@ describe("Eternal task panel", () => {
     });
     bridge.setGlobalShortcut.mockImplementation(async (accelerator) => accelerator);
     bridge.setShortcutRecording.mockResolvedValue(undefined);
+    bridge.getPanelPinned.mockResolvedValue(false);
+    bridge.setPanelPinned.mockImplementation(async (pinned) => pinned);
+    bridge.getWidgetEnabled.mockResolvedValue(false);
+    bridge.setWidgetEnabled.mockImplementation(async (enabled) => enabled);
+    bridge.openMainPanel.mockResolvedValue(undefined);
     bridge.isAutostartEnabled.mockResolvedValue(false);
     bridge.enableAutostart.mockResolvedValue(undefined);
     bridge.disableAutostart.mockResolvedValue(undefined);
     bridge._panelShownHandler = null;
+    bridge._tasksChangedHandler = null;
     bridge.subscribePanelShown.mockImplementation((handler) => {
       bridge._panelShownHandler = handler;
       return () => {
         if (bridge._panelShownHandler === handler) {
           bridge._panelShownHandler = null;
+        }
+      };
+    });
+    bridge.subscribeTasksChanged.mockImplementation((handler) => {
+      bridge._tasksChangedHandler = handler;
+      return () => {
+        if (bridge._tasksChangedHandler === handler) {
+          bridge._tasksChangedHandler = null;
         }
       };
     });
@@ -137,6 +165,102 @@ describe("Eternal task panel", () => {
     expect(header?.hasAttribute("data-tauri-drag-region")).toBe(true);
     expect(actions?.hasAttribute("data-tauri-drag-region")).toBe(false);
     expect(actions?.querySelector("[data-tauri-drag-region]")).toBeNull();
+  });
+
+  it("loads a persisted panel pin into the accessible header control", async () => {
+    bridge.getPanelPinned.mockResolvedValueOnce(true);
+
+    render(<App />);
+
+    const pin = await screen.findByRole("button", { name: "取消固定面板" });
+    expect(pin.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("marks the panel pinned only after the backend confirms the change", async () => {
+    let resolvePin;
+    bridge.setPanelPinned.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePin = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    const pin = await screen.findByRole("button", { name: "固定面板" });
+
+    await user.click(pin);
+
+    expect(bridge.setPanelPinned).toHaveBeenCalledWith(true);
+    expect(pin.getAttribute("aria-pressed")).toBe("false");
+    expect(pin.disabled).toBe(true);
+
+    resolvePin(true);
+    const unpin = await screen.findByRole("button", { name: "取消固定面板" });
+    expect(unpin.getAttribute("aria-pressed")).toBe("true");
+    expect(unpin.disabled).toBe(false);
+  });
+
+  it("keeps the prior pin state and reports a failed save", async () => {
+    bridge.setPanelPinned.mockRejectedValueOnce(new Error("磁盘只读"));
+    const user = userEvent.setup();
+    render(<App />);
+    const pin = await screen.findByRole("button", { name: "固定面板" });
+
+    await user.click(pin);
+
+    await screen.findByText(/无法更新钉板状态.*磁盘只读/);
+    expect(pin.getAttribute("aria-pressed")).toBe("false");
+    expect(pin.disabled).toBe(false);
+  });
+
+  it("opens without a selected task row until the user navigates", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("提交周报");
+
+    expect(document.querySelector(".task-row.is-selected")).toBeNull();
+    expect(document.querySelectorAll(".task-row.is-selected")).toHaveLength(0);
+
+    await user.keyboard("{ArrowDown}");
+    await waitFor(() => {
+      const selected = document.querySelectorAll(".task-row.is-selected");
+      expect(selected).toHaveLength(1);
+      expect(selected[0]?.textContent).toContain("提交周报");
+    });
+
+    await user.keyboard("{ArrowDown}");
+    await waitFor(() => {
+      const selected = document.querySelectorAll(".task-row.is-selected");
+      expect(selected).toHaveLength(1);
+      expect(selected[0]?.textContent).toContain("整理目录");
+    });
+  });
+
+  it("enables the desktop widget only after the backend confirms", async () => {
+    let resolveWidget;
+    bridge.setWidgetEnabled.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveWidget = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("提交周报");
+
+    await user.click(screen.getByRole("button", { name: "打开设置" }));
+    const toggle = await screen.findByRole("switch", { name: "启用桌面组件" });
+    expect(toggle.checked).toBe(false);
+
+    await user.click(toggle);
+    expect(bridge.setWidgetEnabled).toHaveBeenCalledWith(true);
+    expect(toggle.disabled).toBe(true);
+
+    resolveWidget(true);
+    await waitFor(() => {
+      expect(toggle.checked).toBe(true);
+      expect(toggle.disabled).toBe(false);
+    });
   });
 
   it("captures, completes, and searches tasks from one panel", async () => {

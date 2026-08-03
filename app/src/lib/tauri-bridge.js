@@ -81,7 +81,7 @@ export async function listTasks() {
 export async function createTask(title) {
   if (isTauriRuntime()) return invoke("create_task", { title });
 
-  return previewMutation((tasks) => {
+  const created = await previewMutation((tasks) => {
     const task = {
       id: crypto.randomUUID(),
       title: title.trim(),
@@ -93,29 +93,34 @@ export async function createTask(title) {
     tasks.unshift(task);
     return task;
   });
+  emitTasksChangedPreview();
+  return created;
 }
 
 export async function toggleTask(id) {
   if (isTauriRuntime()) return invoke("toggle_task", { id });
 
-  return previewMutation((tasks) => {
+  const updated = await previewMutation((tasks) => {
     const task = tasks.find((candidate) => candidate.id === id);
     task.completed = !task.completed;
     task.completedAtMs = task.completed ? Date.now() : null;
     return { ...task };
   });
+  emitTasksChangedPreview();
+  return updated;
 }
 
 export async function deleteTask(id) {
   if (isTauriRuntime()) return invoke("delete_task", { id });
 
-  return previewMutation((tasks) => {
+  await previewMutation((tasks) => {
     const index = tasks.findIndex((candidate) => candidate.id === id);
     if (index < 0) {
       throw new Error("找不到这项待办");
     }
     tasks.splice(index, 1);
   });
+  emitTasksChangedPreview();
 }
 
 export async function setReminder(id, nextAtMs, repeatEveryMinutes) {
@@ -123,7 +128,7 @@ export async function setReminder(id, nextAtMs, repeatEveryMinutes) {
     return invoke("set_reminder", { id, nextAtMs, repeatEveryMinutes });
   }
 
-  return previewMutation((tasks) => {
+  const updated = await previewMutation((tasks) => {
     const task = tasks.find((candidate) => candidate.id === id);
     task.reminder = {
       nextAtMs,
@@ -132,16 +137,20 @@ export async function setReminder(id, nextAtMs, repeatEveryMinutes) {
     };
     return { ...task };
   });
+  emitTasksChangedPreview();
+  return updated;
 }
 
 export async function clearReminder(id) {
   if (isTauriRuntime()) return invoke("clear_reminder", { id });
 
-  return previewMutation((tasks) => {
+  const updated = await previewMutation((tasks) => {
     const task = tasks.find((candidate) => candidate.id === id);
     task.reminder = null;
     return { ...task };
   });
+  emitTasksChangedPreview();
+  return updated;
 }
 
 export async function hidePanel() {
@@ -208,6 +217,83 @@ export async function setGlobalShortcut(accelerator) {
 
 export async function setShortcutRecording(recording) {
   if (isTauriRuntime()) return invoke("set_shortcut_recording", { recording });
+}
+
+const PREVIEW_PANEL_PINNED_KEY = "eternal.preview.panelPinned";
+
+export async function getPanelPinned() {
+  if (isTauriRuntime()) return invoke("get_panel_pinned");
+  return window.localStorage.getItem(PREVIEW_PANEL_PINNED_KEY) === "1";
+}
+
+export async function setPanelPinned(pinned) {
+  if (isTauriRuntime()) return invoke("set_panel_pinned", { pinned });
+  if (pinned) {
+    window.localStorage.setItem(PREVIEW_PANEL_PINNED_KEY, "1");
+  } else {
+    window.localStorage.removeItem(PREVIEW_PANEL_PINNED_KEY);
+  }
+  return Boolean(pinned);
+}
+
+const PREVIEW_WIDGET_ENABLED_KEY = "eternal.preview.widgetEnabled";
+const PREVIEW_TASKS_CHANGED_LISTENERS = new Set();
+let previewTasksRevision = 0;
+
+function emitTasksChangedPreview() {
+  previewTasksRevision += 1;
+  const payload = { revision: previewTasksRevision };
+  for (const handler of PREVIEW_TASKS_CHANGED_LISTENERS) {
+    handler(payload);
+  }
+}
+
+export async function getWidgetEnabled() {
+  if (isTauriRuntime()) return invoke("get_widget_enabled");
+  return window.localStorage.getItem(PREVIEW_WIDGET_ENABLED_KEY) === "1";
+}
+
+export async function setWidgetEnabled(enabled) {
+  if (isTauriRuntime()) return invoke("set_widget_enabled", { enabled });
+  if (enabled) {
+    window.localStorage.setItem(PREVIEW_WIDGET_ENABLED_KEY, "1");
+  } else {
+    window.localStorage.removeItem(PREVIEW_WIDGET_ENABLED_KEY);
+  }
+  return Boolean(enabled);
+}
+
+export async function openMainPanel() {
+  if (isTauriRuntime()) return invoke("open_main_panel");
+}
+
+export function subscribeTasksChanged(handler) {
+  if (typeof handler !== "function") {
+    return () => {};
+  }
+
+  if (isTauriRuntime()) {
+    let active = true;
+    let unlisten = () => {};
+    listen("tasks-changed", (event) => {
+      handler(event?.payload ?? { revision: 0 });
+    }).then((fn) => {
+      if (!active) {
+        fn();
+        return;
+      }
+      unlisten = fn;
+    });
+    return () => {
+      active = false;
+      unlisten();
+    };
+  }
+
+  PREVIEW_TASKS_CHANGED_LISTENERS.add(handler);
+  return () => {
+    PREVIEW_TASKS_CHANGED_LISTENERS.delete(handler);
+  };
 }
 
 export async function isAutostartEnabled() {

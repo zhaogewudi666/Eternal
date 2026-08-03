@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{App, AppHandle, Emitter, Manager};
+use tauri::{App, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_window_state::{AppHandleExt, StateFlags, WindowExt};
@@ -17,6 +17,10 @@ use crate::window_position::{clamp_to_visible, MonitorBounds, Point, Size};
 
 const REMINDER_POLL_INTERVAL: Duration = Duration::from_secs(15);
 const FOCUS_LOSS_HIDE_DELAY: Duration = Duration::from_millis(200);
+pub const WIDGET_LABEL: &str = "widget";
+pub const MAIN_LABEL: &str = "main";
+const WIDGET_WIDTH: f64 = 240.0;
+const WIDGET_HEIGHT: f64 = 340.0;
 
 #[derive(Default)]
 pub struct WindowState {
@@ -27,17 +31,30 @@ pub struct WindowState {
 struct AutoHideState {
     next_token: u64,
     pending: Option<u64>,
+    pinned: bool,
 }
 
 impl WindowState {
-    pub fn begin_auto_hide(&self) -> u64 {
+    pub fn new(pinned: bool) -> Self {
+        Self {
+            auto_hide: Mutex::new(AutoHideState {
+                pinned,
+                ..AutoHideState::default()
+            }),
+        }
+    }
+
+    pub fn begin_auto_hide(&self) -> Option<u64> {
         let Ok(mut auto_hide) = self.auto_hide.lock() else {
-            return 0;
+            return None;
         };
+        if auto_hide.pinned {
+            return None;
+        }
         auto_hide.next_token = auto_hide.next_token.wrapping_add(1);
         let token = auto_hide.next_token;
         auto_hide.pending = Some(token);
-        token
+        Some(token)
     }
 
     pub fn cancel_auto_hide(&self) {
@@ -57,6 +74,22 @@ impl WindowState {
             false
         }
     }
+
+    pub fn is_pinned(&self) -> bool {
+        self.auto_hide
+            .lock()
+            .map(|auto_hide| auto_hide.pinned)
+            .unwrap_or(false)
+    }
+
+    pub fn set_pinned(&self, pinned: bool) {
+        if let Ok(mut auto_hide) = self.auto_hide.lock() {
+            auto_hide.pinned = pinned;
+            if pinned {
+                auto_hide.pending = None;
+            }
+        }
+    }
 }
 
 pub(crate) fn now_ms() -> Option<i64> {
@@ -73,7 +106,7 @@ struct PanelShownPayload {
 }
 
 pub fn show_panel(app: &AppHandle) -> tauri::Result<()> {
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_webview_window(MAIN_LABEL) {
         // macOS keeps the whole process hidden after `hide_panel`, so the window
         // would stay invisible until the application itself is unhidden.
         #[cfg(target_os = "macos")]
@@ -89,11 +122,11 @@ pub fn show_panel(app: &AppHandle) -> tauri::Result<()> {
 /// Hides the panel without changing application activation. This is the safe
 /// path after the user has already focused another application.
 pub fn conceal_panel(app: &AppHandle) -> tauri::Result<()> {
-    let Some(window) = app.get_webview_window("main") else {
+    let Some(window) = app.get_webview_window(MAIN_LABEL) else {
         return Ok(());
     };
 
-    save_panel_position(app);
+    save_window_positions(app);
     window.hide()?;
 
     if let Some(gate) = app.try_state::<RecordingGate>() {
@@ -103,25 +136,39 @@ pub fn conceal_panel(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+fn widget_is_visible(app: &AppHandle) -> bool {
+    app.get_webview_window(WIDGET_LABEL)
+        .and_then(|window| window.is_visible().ok())
+        .unwrap_or(false)
+}
+
 /// Hides the panel and, on macOS, hands the keyboard focus back to whichever
 /// application the user came from instead of leaving the menu bar app active.
+/// When the desktop widget remains visible, only `main` is hidden.
 pub fn hide_panel(app: &AppHandle) -> tauri::Result<()> {
     conceal_panel(app)?;
 
     #[cfg(target_os = "macos")]
-    app.hide()?;
+    if !widget_is_visible(app) {
+        app.hide()?;
+    }
 
     Ok(())
 }
 
 pub fn save_panel_position(app: &AppHandle) {
+    save_window_positions(app);
+}
+
+pub fn save_window_positions(app: &AppHandle) {
+    // Plugin persists each labeled window (main + widget) by its label.
     if let Err(error) = app.save_window_state(StateFlags::POSITION) {
-        log::error!("failed to save panel position: {error}");
+        log::error!("failed to save window positions: {error}");
     }
 }
 
 pub fn toggle_panel(app: &AppHandle) -> tauri::Result<()> {
-    let Some(window) = app.get_webview_window("main") else {
+    let Some(window) = app.get_webview_window(MAIN_LABEL) else {
         return Ok(());
     };
 
@@ -129,6 +176,87 @@ pub fn toggle_panel(app: &AppHandle) -> tauri::Result<()> {
         hide_panel(app)
     } else {
         show_panel(app)
+    }
+}
+
+/// Desired desktop-widget window policy used by tests and builders.
+pub fn widget_window_policy() -> WidgetWindowPolicy {
+    WidgetWindowPolicy {
+        label: WIDGET_LABEL,
+        width: WIDGET_WIDTH,
+        height: WIDGET_HEIGHT,
+        always_on_bottom: true,
+        always_on_top: false,
+        skip_taskbar: true,
+        decorations: false,
+        resizable: false,
+        focused_on_create: false,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WidgetWindowPolicy {
+    pub label: &'static str,
+    pub width: f64,
+    pub height: f64,
+    pub always_on_bottom: bool,
+    pub always_on_top: bool,
+    pub skip_taskbar: bool,
+    pub decorations: bool,
+    pub resizable: bool,
+    pub focused_on_create: bool,
+}
+
+/// Creates or shows the opt-in desktop widget. Idempotent when already open.
+pub fn ensure_widget_window(app: &AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window(WIDGET_LABEL) {
+        window.show()?;
+        let _ = window.set_always_on_bottom(true);
+        return Ok(());
+    }
+
+    let policy = widget_window_policy();
+    let window = WebviewWindowBuilder::new(
+        app,
+        policy.label,
+        WebviewUrl::App("index.html?window=widget".into()),
+    )
+    .title("Eternal 桌面组件")
+    .inner_size(policy.width, policy.height)
+    .min_inner_size(policy.width, policy.height)
+    .max_inner_size(policy.width, policy.height)
+    .resizable(policy.resizable)
+    .decorations(policy.decorations)
+    .transparent(true)
+    .always_on_bottom(policy.always_on_bottom)
+    .skip_taskbar(policy.skip_taskbar)
+    .visible(false)
+    .focused(policy.focused_on_create)
+    .build()?;
+
+    let _ = window.restore_state(StateFlags::POSITION);
+    clamp_panel_position(&window)?;
+    window.show()?;
+    let _ = window.set_always_on_bottom(true);
+    Ok(())
+}
+
+/// Hides and destroys the widget window after persisting its position.
+pub fn close_widget_window(app: &AppHandle) -> tauri::Result<()> {
+    let Some(window) = app.get_webview_window(WIDGET_LABEL) else {
+        return Ok(());
+    };
+    save_window_positions(app);
+    window.hide()?;
+    window.close()?;
+    Ok(())
+}
+
+pub fn set_widget_visible(app: &AppHandle, enabled: bool) -> tauri::Result<()> {
+    if enabled {
+        ensure_widget_window(app)
+    } else {
+        close_widget_window(app)
     }
 }
 
@@ -205,7 +333,9 @@ pub fn schedule_focus_loss_hide(window: tauri::Window) {
     let Some(state) = window.app_handle().try_state::<WindowState>() else {
         return;
     };
-    let token = state.begin_auto_hide();
+    let Some(token) = state.begin_auto_hide() else {
+        return;
+    };
 
     thread::spawn(move || {
         thread::sleep(FOCUS_LOSS_HIDE_DELAY);
@@ -230,13 +360,25 @@ pub fn cancel_focus_loss_hide(window: &tauri::Window) {
 pub fn setup_desktop(
     app: &mut App,
     show_initial_panel: bool,
+    widget_enabled: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
     let show_item = MenuItem::with_id(app, "show", "显示 Eternal", true, None::<&str>)?;
+    let widget_item = MenuItem::with_id(
+        app,
+        "toggle-widget",
+        if widget_enabled {
+            "隐藏桌面组件"
+        } else {
+            "显示桌面组件"
+        },
+        true,
+        None::<&str>,
+    )?;
     let quit_item = MenuItem::with_id(app, "quit", "退出 Eternal", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+    let menu = Menu::with_items(app, &[&show_item, &widget_item, &quit_item])?;
 
     let mut tray = TrayIconBuilder::with_id("eternal")
         .tooltip("Eternal 待办")
@@ -246,6 +388,21 @@ pub fn setup_desktop(
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => {
                 let _ = show_panel(app);
+            }
+            "toggle-widget" => {
+                if let Some(settings) = app.try_state::<crate::commands::SettingsState>() {
+                    let currently = settings.widget_enabled().unwrap_or(false);
+                    let desired = !currently;
+                    match settings.set_widget_enabled(desired) {
+                        Ok(_) => {
+                            if let Err(error) = set_widget_visible(app, desired) {
+                                log::error!("failed to toggle widget from tray: {error}");
+                                let _ = settings.set_widget_enabled(currently);
+                            }
+                        }
+                        Err(error) => log::error!("failed to persist widget setting: {error}"),
+                    }
+                }
             }
             "quit" => app.exit(0),
             _ => {}
@@ -271,12 +428,17 @@ pub fn setup_desktop(
     }
     tray.build(app)?;
 
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_webview_window(MAIN_LABEL) {
         window.restore_state(StateFlags::POSITION)?;
         clamp_panel_position(&window)?;
     }
 
     start_reminder_scheduler(app.handle().clone());
+    if widget_enabled {
+        if let Err(error) = ensure_widget_window(app.handle()) {
+            log::error!("failed to open desktop widget on startup: {error}");
+        }
+    }
     if show_initial_panel {
         show_panel(app.handle())?;
     }
@@ -342,6 +504,7 @@ fn start_reminder_scheduler(app: AppHandle) {
                 log::error!("failed to persist reminder state: {error}");
                 Vec::new()
             } else {
+                state.bump_and_emit_tasks_changed(&app);
                 due
             }
         };
@@ -367,7 +530,9 @@ mod tests {
     #[test]
     fn tray_click_cancels_a_pending_focus_loss_hide() {
         let state = WindowState::default();
-        let token = state.begin_auto_hide();
+        let token = state
+            .begin_auto_hide()
+            .expect("unpinned panel schedules hide");
 
         state.cancel_auto_hide();
 
@@ -377,9 +542,46 @@ mod tests {
     #[test]
     fn an_uncancelled_focus_loss_hides_only_once() {
         let state = WindowState::default();
-        let token = state.begin_auto_hide();
+        let token = state
+            .begin_auto_hide()
+            .expect("unpinned panel schedules hide");
 
         assert!(state.take_pending_auto_hide(token));
         assert!(!state.take_pending_auto_hide(token));
+    }
+
+    #[test]
+    fn a_pinned_panel_never_schedules_focus_loss_hide() {
+        let state = WindowState::new(true);
+
+        assert!(state.begin_auto_hide().is_none());
+        assert!(state.is_pinned());
+    }
+
+    #[test]
+    fn pinning_cancels_a_focus_loss_hide_that_is_already_pending() {
+        let state = WindowState::new(false);
+        let token = state
+            .begin_auto_hide()
+            .expect("unpinned panel schedules hide");
+
+        state.set_pinned(true);
+
+        assert!(state.is_pinned());
+        assert!(!state.take_pending_auto_hide(token));
+    }
+
+    #[test]
+    fn desktop_widget_policy_is_always_on_bottom_and_compact() {
+        let policy = super::widget_window_policy();
+        assert_eq!(policy.label, "widget");
+        assert_eq!(policy.width, 240.0);
+        assert_eq!(policy.height, 340.0);
+        assert!(policy.always_on_bottom);
+        assert!(!policy.always_on_top);
+        assert!(policy.skip_taskbar);
+        assert!(!policy.decorations);
+        assert!(!policy.resizable);
+        assert!(!policy.focused_on_create);
     }
 }

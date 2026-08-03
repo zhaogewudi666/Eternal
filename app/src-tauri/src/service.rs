@@ -16,6 +16,7 @@ impl TaskService {
     }
 
     pub fn create(&mut self, title: &str, now_ms: i64) -> Result<Task, String> {
+        self.ensure_writable()?;
         let task = Task::new(title, now_ms)?;
         let mut tasks = self.repository.tasks().to_vec();
         tasks.insert(0, task.clone());
@@ -26,6 +27,7 @@ impl TaskService {
     }
 
     pub fn toggle(&mut self, id: &str, now_ms: i64) -> Result<Task, String> {
+        self.ensure_writable()?;
         self.update_task(id, |task| task.toggle(now_ms))
     }
 
@@ -35,6 +37,7 @@ impl TaskService {
         next_at_ms: i64,
         repeat_every_minutes: Option<u32>,
     ) -> Result<Task, String> {
+        self.ensure_writable()?;
         if repeat_every_minutes == Some(0) {
             return Err("重复间隔必须大于 0 分钟".to_string());
         }
@@ -52,10 +55,12 @@ impl TaskService {
     }
 
     pub fn clear_reminder(&mut self, id: &str) -> Result<Task, String> {
+        self.ensure_writable()?;
         self.update_task(id, |task| task.reminder = None)
     }
 
     pub fn delete(&mut self, id: &str) -> Result<(), String> {
+        self.ensure_writable()?;
         let mut tasks = self.repository.tasks().to_vec();
         let before = tasks.len();
         tasks.retain(|task| task.id != id);
@@ -69,7 +74,12 @@ impl TaskService {
     }
 
     pub fn replace_all(&mut self, tasks: Vec<Task>) -> Result<(), String> {
+        self.ensure_writable()?;
         self.repository.replace_and_save(tasks).map_err(to_message)
+    }
+
+    fn ensure_writable(&self) -> Result<(), String> {
+        self.repository.ensure_writable().map_err(to_message)
     }
 
     fn update_task(&mut self, id: &str, update: impl FnOnce(&mut Task)) -> Result<Task, String> {
@@ -210,5 +220,59 @@ mod tests {
             .list()
             .iter()
             .all(|candidate| candidate.id != task.id));
+    }
+
+    #[test]
+    fn higher_schema_bootstrap_blocks_all_service_mutations_without_touching_file() {
+        let root = std::env::temp_dir().join(format!(
+            "eternal-service-higher-schema-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).expect("create test directory");
+        let tasks_path = root.join("tasks.json");
+        // Current supported schema is 1; any higher version must stay write-blocked.
+        let payload = r#"{"schemaVersion":99,"tasks":[{"id":"keep","title":"高版本","completed":false,"createdAtMs":1,"completedAtMs":null,"reminder":null}]}"#;
+        fs::write(&tasks_path, &payload).expect("write fixture");
+        let original = fs::read(&tasks_path).expect("original bytes");
+
+        let (repository, report) =
+            TaskRepository::bootstrap(root.clone(), "0.2.4", 900).expect("bootstrap");
+        assert!(report.recovery_message.is_some());
+        let mut service = TaskService::new(repository);
+
+        let create_error = service.create("新任务", 100).expect_err("create blocked");
+        assert!(
+            create_error.contains("高于当前支持") || create_error.contains("禁止写入"),
+            "create error: {create_error}"
+        );
+        assert_eq!(fs::read(&tasks_path).expect("after create"), original);
+
+        let toggle_error = service.toggle("keep", 200).expect_err("toggle blocked");
+        assert!(
+            toggle_error.contains("高于当前支持")
+                || toggle_error.contains("禁止写入")
+                || toggle_error.contains("找不到这项待办"),
+            "toggle error: {toggle_error}"
+        );
+        assert_eq!(fs::read(&tasks_path).expect("after toggle"), original);
+
+        let delete_error = service.delete("keep").expect_err("delete blocked");
+        assert!(
+            delete_error.contains("高于当前支持")
+                || delete_error.contains("禁止写入")
+                || delete_error.contains("找不到这项待办"),
+            "delete error: {delete_error}"
+        );
+        assert_eq!(fs::read(&tasks_path).expect("after delete"), original);
+
+        let replace_error = service
+            .replace_all(vec![])
+            .expect_err("replace_all blocked");
+        assert!(
+            replace_error.contains("高于当前支持") || replace_error.contains("禁止写入"),
+            "replace_all error: {replace_error}"
+        );
+        assert_eq!(fs::read(&tasks_path).expect("after replace_all"), original);
+        assert_eq!(service.list().len(), 0);
     }
 }

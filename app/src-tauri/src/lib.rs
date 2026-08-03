@@ -15,9 +15,9 @@ use autostart_config::{should_show_initial_panel, AUTOSTART_FLAG};
 use commands::{AppState, SettingsState};
 use platform::{
     cancel_focus_loss_hide, hide_panel, now_ms, register_global_shortcut, schedule_focus_loss_hide,
-    setup_desktop, WindowState,
+    setup_desktop, show_panel, WindowState, MAIN_LABEL,
 };
-use repository::TaskRepository;
+use repository::{secondary_instance_should_focus_existing_main, TaskRepository};
 use service::TaskService;
 use settings::SettingsRepository;
 use shortcut::RecordingGate;
@@ -27,6 +27,12 @@ use tauri_plugin_notification::NotificationExt;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Single-instance must register before any window/task setup side effects.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if secondary_instance_should_focus_existing_main() {
+                let _ = show_panel(app);
+            }
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
@@ -47,38 +53,29 @@ pub fn run() {
                 )?;
             }
 
-            let data_path: PathBuf = app.path().app_data_dir()?.join("tasks.json");
-            let (repository, recovery_message) = match TaskRepository::load_or_recover(
-                data_path.clone(),
+            let app_data_dir: PathBuf = app.path().app_data_dir()?;
+            let app_version = app.package_info().version.to_string();
+            let (repository, recovery_message) = match TaskRepository::bootstrap(
+                app_data_dir.clone(),
+                &app_version,
                 now_ms().unwrap_or_default(),
             ) {
-                Ok((repository, Some(backup))) => {
-                    let backup_name = backup
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .unwrap_or("损坏数据备份");
-                    (
-                        repository,
-                        Some(format!(
-                            "原待办文件无法读取，已保留为 {backup_name}，现在使用空列表启动。"
-                        )),
-                    )
-                }
-                Ok((repository, None)) => (repository, None),
+                Ok((repository, report)) => (repository, report.recovery_message),
                 Err(error) => {
                     log::error!("failed to load task data: {error}");
-                    (
-                        TaskRepository::empty(data_path),
-                        Some(
-                            "暂时无法读取原待办文件；Eternal 未修改它，并使用空列表启动。"
-                                .to_string(),
-                        ),
-                    )
+                    let tasks_path = app_data_dir.join("tasks.json");
+                    // Never fall back to a writable empty repository over an existing
+                    // canonical file (higher schema or hard read failure) — that path
+                    // used to rewrite on-disk data and lose user tasks.
+                    let repository = TaskRepository::for_startup_failure(tasks_path, &error);
+                    (repository, Some(error.to_string()))
                 }
             };
             let settings =
-                SettingsRepository::load_or_default(app.path().app_data_dir()?.join("settings.json"));
+                SettingsRepository::load_or_default(app_data_dir.join("settings.json"));
             let stored_shortcut = settings.global_shortcut().to_string();
+            let panel_pinned = settings.panel_pinned();
+            let widget_enabled = settings.widget_enabled();
 
             let active_shortcut =
                 match register_global_shortcut(app.handle(), &stored_shortcut) {
@@ -101,20 +98,20 @@ pub fn run() {
 
             app.manage(AppState::new(TaskService::new(repository)));
             app.manage(SettingsState::new(settings, active_shortcut));
-            app.manage(WindowState::default());
+            app.manage(WindowState::new(panel_pinned));
             app.manage(RecordingGate::default());
 
             if let Some(message) = recovery_message {
                 let _ = app
                     .notification()
                     .builder()
-                    .title("Eternal 已安全恢复")
+                    .title("Eternal 数据提示")
                     .body(message)
                     .show();
             }
 
             let show_initial_panel = should_show_initial_panel(std::env::args());
-            setup_desktop(app, show_initial_panel)
+            setup_desktop(app, show_initial_panel, widget_enabled)
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_tasks,
@@ -124,18 +121,32 @@ pub fn run() {
             commands::set_reminder,
             commands::clear_reminder,
             commands::hide_panel,
+            commands::open_main_panel,
             commands::get_global_shortcut,
             commands::set_global_shortcut,
             commands::set_shortcut_recording,
+            commands::get_panel_pinned,
+            commands::set_panel_pinned,
+            commands::get_widget_enabled,
+            commands::set_widget_enabled,
         ])
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
-                api.prevent_close();
-                let _ = hide_panel(window.app_handle());
+        .on_window_event(|window, event| {
+            // Focus-loss concealment applies only to the main panel, never the widget.
+            if window.label() != MAIN_LABEL {
+                if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                    // Widget close is handled by commands that also persist widgetEnabled.
+                }
+                return;
             }
-            tauri::WindowEvent::Focused(false) => schedule_focus_loss_hide(window.clone()),
-            tauri::WindowEvent::Focused(true) => cancel_focus_loss_hide(window),
-            _ => {}
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = hide_panel(window.app_handle());
+                }
+                tauri::WindowEvent::Focused(false) => schedule_focus_loss_hide(window.clone()),
+                tauri::WindowEvent::Focused(true) => cancel_focus_loss_hide(window),
+                _ => {}
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
