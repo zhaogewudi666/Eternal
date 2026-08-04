@@ -85,8 +85,8 @@ mod tests {
     use super::{clamp_to_visible, MonitorBounds, Point, Size};
 
     const WINDOW: Size = Size {
-        width: 380,
-        height: 560,
+        width: 440,
+        height: 680,
     };
 
     fn monitor(x: i32, y: i32, width: u32, height: u32) -> MonitorBounds {
@@ -112,7 +112,7 @@ mod tests {
 
         assert_eq!(
             clamp_to_visible(Point { x: 1800, y: 900 }, WINDOW, &screens),
-            Point { x: 1540, y: 520 }
+            Point { x: 1480, y: 400 }
         );
     }
 
@@ -132,7 +132,7 @@ mod tests {
 
         assert_eq!(
             clamp_to_visible(Point { x: -1300, y: 80 }, WINDOW, &screens),
-            Point { x: 770, y: 260 }
+            Point { x: 740, y: 200 }
         );
     }
 

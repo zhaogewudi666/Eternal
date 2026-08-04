@@ -91,14 +91,14 @@ button {
 }
 
 .app-shell {
-  width: min(100vw, 380px);
-  height: min(100dvh, 560px);
-  min-height: 520px;
+  width: min(100vw, 440px);
+  height: min(100dvh, 680px);
+  min-height: 620px;
   margin-inline: auto;
   overflow: hidden;
   position: relative;
   display: grid;
-  grid-template-rows: 58px 56px minmax(0, 1fr) 38px;
+  grid-template-rows: 58px auto minmax(0, 1fr) 38px;
   background: var(--color-bg);
   border: 1px solid color-mix(in srgb, var(--color-border), transparent 12%);
   border-radius: 14px;
@@ -227,11 +227,11 @@ button {
 }
 
 .composer {
-  height: 44px;
+  min-height: 44px;
   margin: 6px 14px;
-  padding: 0 10px;
+  padding: 10px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   background: var(--color-surface);
   border: 1px solid transparent;
@@ -246,9 +246,11 @@ button {
   color: var(--color-muted);
   display: inline-grid;
   place-items: center;
+  margin-top: 2px;
 }
 
-.composer input {
+.composer input,
+.composer textarea {
   min-width: 0;
   flex: 1;
   border: 0;
@@ -259,7 +261,18 @@ button {
   line-height: 20px;
 }
 
+.composer textarea {
+  height: 24px;
+  padding: 0;
+  resize: none;
+  overflow-y: hidden;
+}
+
 .composer input::placeholder {
+  color: var(--color-muted);
+}
+
+.composer textarea::placeholder {
   color: var(--color-muted);
 }
 
@@ -372,12 +385,12 @@ button {
 
 .task-title {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   font-size: 14px;
   line-height: 20px;
   font-weight: 500;
+  padding: 6px 0;
 }
 
 .task-row.is-completed {
@@ -530,7 +543,7 @@ button {
 }
 
 .delete-confirm .popover-header span {
-  max-width: 280px;
+  max-width: 360px;
   line-height: 1.35;
 }
 
@@ -565,8 +578,9 @@ button {
 }
 
 .popover-header span {
-  color: var(--color-secondary);
-  font-size: 11px;
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 1.4;
 }
 
 .text-button,
