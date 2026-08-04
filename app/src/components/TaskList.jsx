@@ -1,4 +1,5 @@
 import { BellSimple, Check, Repeat, Trash } from "@phosphor-icons/react";
+import { useState } from "react";
 
 function reminderLabel(reminder) {
   if (!reminder) return "";
@@ -24,19 +25,29 @@ function TaskRow({
   onEditReminder,
   onRequestDelete,
 }) {
+  const [expanded, setExpanded] = useState(false);
   const completed = visualCompleted ?? task.completed;
   const hasReminder = Boolean(task.reminder);
   const reminderName = hasReminder
     ? `编辑提醒：${task.title}`
     : `设置提醒：${task.title}`;
 
+  function handleRowClick(event) {
+    // Row action buttons manage their own clicks; do not toggle expansion.
+    if (event.target.closest("button")) return;
+    setExpanded((value) => !value);
+  }
+
   return (
     <div
       className={`task-row ${selected ? "is-selected" : ""} ${
         completed ? "is-completed" : ""
-      } ${isTransitioning ? "is-toggling" : ""}`}
+      } ${isTransitioning ? "is-toggling" : ""} ${
+        expanded ? "is-expanded" : ""
+      }`}
       data-task-id={task.id}
       onMouseDown={() => onSelect(task.id)}
+      onClick={handleRowClick}
     >
       <button
         className="task-checkbox"

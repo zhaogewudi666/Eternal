@@ -385,11 +385,18 @@ button {
 
 .task-title {
   min-width: 0;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 14px;
   line-height: 20px;
   font-weight: 500;
+}
+
+/* Clicking a row reveals its full text; the row height grows with content. */
+.task-row.is-expanded .task-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
   padding: 6px 0;
 }
 
