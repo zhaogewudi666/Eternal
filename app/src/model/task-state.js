@@ -67,12 +67,16 @@ export function isSubmitKey(event) {
   );
 }
 
-export function nextEscapeAction(mode, { isRecordingShortcut = false } = {}) {
+export function nextEscapeAction(
+  mode,
+  { isRecordingShortcut = false, editingTitle = false } = {},
+) {
   if (isRecordingShortcut) return "cancel-recording";
   if (mode === "reminder" || mode === "settings" || mode === "delete") {
     return "close-overlay";
   }
   if (mode === "search") return "exit-search";
+  if (editingTitle) return "cancel-edit";
   return "hide-panel";
 }
 
@@ -144,10 +148,14 @@ export function footerHintsForContext({
   selectedId = null,
   isRecordingShortcut = false,
   isSearching = false,
+  editingTitle = false,
   modifierLabel = "⌘",
 } = {}) {
   if (isRecordingShortcut) {
     return ["Esc 取消录制"];
+  }
+  if (editingTitle) {
+    return ["Enter 保存编辑", "Esc 取消"];
   }
   if (mode === "delete") {
     return ["Enter 确认删除", "Esc 取消"];

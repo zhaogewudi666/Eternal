@@ -1,4 +1,4 @@
-import { BellSimple, Check, Repeat, Trash } from "@phosphor-icons/react";
+import { BellSimple, Check, PencilSimple, Repeat, Trash } from "@phosphor-icons/react";
 import { useState } from "react";
 
 function reminderLabel(reminder) {
@@ -23,6 +23,7 @@ function TaskRow({
   onSelect,
   onToggle,
   onEditReminder,
+  onEdit,
   onRequestDelete,
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -68,6 +69,16 @@ function TaskRow({
         </span>
       )}
       <div className="task-actions">
+        {expanded && (
+          <button
+            className="title-edit-button"
+            type="button"
+            aria-label={`编辑：${task.title}`}
+            onClick={() => onEdit(task.id)}
+          >
+            <PencilSimple size={14} weight="regular" aria-hidden="true" />
+          </button>
+        )}
         <button
           className={`reminder-control ${hasReminder ? "has-reminder" : ""}`}
           type="button"
@@ -108,6 +119,7 @@ function TaskSection({
   onToggle,
   onEditReminder,
   onRequestDelete,
+  onEdit,
 }) {
   if (!tasks.length && !emptyMessage) return null;
 
@@ -136,6 +148,7 @@ function TaskSection({
                 onSelect={onSelect}
                 onToggle={onToggle}
                 onEditReminder={onEditReminder}
+                onEdit={onEdit}
                 onRequestDelete={onRequestDelete}
               />
             );
@@ -163,6 +176,7 @@ export function TaskList({
   onToggle,
   onEditReminder,
   onRequestDelete,
+  onEdit,
 }) {
   const hasAny = activeTasks.length > 0 || completedTasks.length > 0;
 
@@ -198,6 +212,7 @@ export function TaskList({
         onSelect={onSelect}
         onToggle={onToggle}
         onEditReminder={onEditReminder}
+        onEdit={onEdit}
         onRequestDelete={onRequestDelete}
       />
       <TaskSection
@@ -212,6 +227,7 @@ export function TaskList({
         onSelect={onSelect}
         onToggle={onToggle}
         onEditReminder={onEditReminder}
+        onEdit={onEdit}
         onRequestDelete={onRequestDelete}
       />
     </section>

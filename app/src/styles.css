@@ -242,6 +242,10 @@ button {
   border-color: color-mix(in srgb, var(--color-accent), transparent 55%);
 }
 
+.composer.is-editing {
+  border-color: color-mix(in srgb, var(--color-accent), transparent 35%);
+}
+
 .composer-icon {
   color: var(--color-muted);
   display: inline-grid;
@@ -400,18 +404,6 @@ button {
   padding: 6px 0;
 }
 
-.title-input {
-  min-width: 0;
-  width: 100%;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--color-text);
-  font-size: 14px;
-  line-height: 20px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-accent), transparent 40%);
-}
-
 .title-edit-button {
   width: 24px;
   height: 24px;
@@ -433,17 +425,6 @@ button {
 .title-edit-button:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--color-accent), transparent 50%);
   outline-offset: 1px;
-}
-
-.popover-header-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.title-edit {
-  min-width: 0;
 }
 
 .task-row.is-completed {

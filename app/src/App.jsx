@@ -98,6 +98,7 @@ export function App() {
   const [tasks, setTasks] = useState([]);
   const [mode, setMode] = useState("normal");
   const [draft, setDraft] = useState("");
+  const [editingId, setEditingId] = useState(null);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [isListNavigating, setIsListNavigating] = useState(false);
@@ -229,15 +230,43 @@ export function App() {
     [tasks],
   );
 
-  const handleRename = useCallback(async (id, title) => {
+  const selectedTask = tasks.find((task) => task.id === selectedId) || null;
+
+  const startEdit = useCallback((task) => {
+    setEditingId(task.id);
+    setDraft(task.title);
+    setIsListNavigating(false);
+    setMode("normal");
+    setQuery("");
+    inputRef.current?.focus();
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setEditingId(null);
+    setDraft("");
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    if (!editingId) return;
+    const title = draft.trim();
+    if (!title) return;
     try {
-      const updated = await renameTask(id, title);
+      const updated = await renameTask(editingId, title);
       setTasks((current) => replaceTask(current, updated));
+      setEditingId(null);
+      setDraft("");
     } catch (reason) {
       setError(String(reason));
     }
-  }, []);
-  const selectedTask = tasks.find((task) => task.id === selectedId) || null;
+  }, [draft, editingId]);
+
+  const openEdit = useCallback(
+    (id) => {
+      const task = tasks.find((candidate) => candidate.id === id);
+      if (task) startEdit(task);
+    },
+    [startEdit, tasks],
+  );
 
   // Keep keyboard navigation coupled to the notes scrollport. The row can be
   // selected while focus is still on the global window listener, so relying on
@@ -251,6 +280,10 @@ export function App() {
   }, [isListNavigating, selectedId]);
 
   async function handleCreate() {
+    if (editingId) {
+      await saveEdit();
+      return;
+    }
     const title = draft.trim();
     if (!title || mode !== "normal") return;
     try {
@@ -585,8 +618,15 @@ export function App() {
 
       if (event.key === "Escape") {
         event.preventDefault();
-        const action = nextEscapeAction(mode, { isRecordingShortcut });
+        const action = nextEscapeAction(mode, {
+          isRecordingShortcut,
+          editingTitle: Boolean(editingId),
+        });
         if (action === "cancel-recording") stopRecording();
+        if (action === "cancel-edit") {
+          cancelEdit();
+          return;
+        }
         if (action === "close-overlay") {
           setMode("normal");
           if (mode === "delete" || mode === "reminder") {
@@ -642,6 +682,21 @@ export function App() {
       if (hasCommand && event.key.toLowerCase() === "f") {
         event.preventDefault();
         setMode("search");
+        return;
+      }
+
+      if (
+        hasCommand &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "e"
+      ) {
+        // Cmd/Ctrl+E on a selected row pulls its title into the composer for
+        // editing; the list itself stays untouched.
+        if (mode === "normal" && isListNavigating && selectedTask) {
+          event.preventDefault();
+          startEdit(selectedTask);
+        }
         return;
       }
 
@@ -798,6 +853,8 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     applyShortcut,
+    cancelEdit,
+    editingId,
     handleDelete,
     handlePanelPinToggle,
     handleToggle,
@@ -808,7 +865,10 @@ export function App() {
     mode,
     navigableTasks,
     openDeleteConfirm,
+    saveEdit,
     selectedId,
+    selectedTask,
+    startEdit,
     stopRecording,
   ]);
 
@@ -821,15 +881,17 @@ export function App() {
         selectedId,
         isRecordingShortcut,
         isSearching,
+        editingTitle: Boolean(editingId),
         modifierLabel,
       }),
     [
+      editingId,
       isListNavigating,
       isRecordingShortcut,
       isSearching,
       mode,
-      modifierLabel,
       selectedId,
+      modifierLabel,
     ],
   );
 
@@ -894,6 +956,7 @@ export function App() {
         inputRef={inputRef}
         onChange={isSearching ? setQuery : setDraft}
         onSubmit={handleCreate}
+        editing={Boolean(editingId) && !isSearching}
         onFocusInput={() => setIsListNavigating(false)}
         onExitSearch={() => {
           setMode("normal");
@@ -928,6 +991,7 @@ export function App() {
           }}
           onToggle={handleToggle}
           onEditReminder={openReminder}
+          onEdit={openEdit}
           onRequestDelete={openDeleteConfirm}
         />
       </div>
@@ -962,7 +1026,6 @@ export function App() {
           task={selectedTask}
           onSave={handleSaveReminder}
           onClear={handleClearReminder}
-          onRename={handleRename}
           onClose={() => {
             setMode("normal");
             setIsListNavigating(true);

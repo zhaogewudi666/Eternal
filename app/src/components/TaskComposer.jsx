@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
+import { MagnifyingGlass, PencilSimple, Plus, X } from "@phosphor-icons/react";
 
 import { isSubmitKey } from "../model/task-state";
 
@@ -17,6 +17,7 @@ export function TaskComposer({
   onSubmit,
   onExitSearch,
   onFocusInput,
+  editing = false,
 }) {
   const isSearch = mode === "search";
 
@@ -58,15 +59,19 @@ export function TaskComposer({
   }
 
   return (
-    <div className="composer">
+    <div className={`composer ${editing ? "is-editing" : ""}`}>
       <span className="composer-icon" aria-hidden="true">
-        <Plus size={20} weight="regular" />
+        {editing ? (
+          <PencilSimple size={18} weight="regular" />
+        ) : (
+          <Plus size={20} weight="regular" />
+        )}
       </span>
       <textarea
         ref={inputRef}
         rows={1}
-        aria-label="添加任务"
-        placeholder="添加任务"
+        aria-label={editing ? "编辑任务标题" : "添加任务"}
+        placeholder={editing ? "编辑任务标题…" : "添加任务"}
         value={value}
         autoComplete="off"
         spellCheck="false"

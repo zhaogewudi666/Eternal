@@ -10,6 +10,7 @@ const bridge = vi.hoisted(() => ({
   listTasks: vi.fn(),
   createTask: vi.fn(),
   toggleTask: vi.fn(),
+  renameTask: vi.fn(),
   deleteTask: vi.fn(),
   setReminder: vi.fn(),
   clearReminder: vi.fn(),
@@ -2270,6 +2271,79 @@ describe("Eternal task panel", () => {
       expect(footer.textContent).toContain("↓ 结果");
       expect(footer.textContent).toContain("Esc 退出搜索");
       expect(footer.textContent).not.toContain("Space 完成/恢复");
+    });
+  });
+
+  describe("composer title editing", () => {
+    it("Cmd+E fills the composer with the selected task and Enter saves", async () => {
+      const user = userEvent.setup();
+      bridge.renameTask.mockResolvedValueOnce({
+        ...activeTask,
+        title: "修改后的周报",
+      });
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      await user.keyboard("{ArrowDown}");
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+
+      fireEvent.keyDown(window, { key: "e", metaKey: true });
+      const composer = screen.getByRole("textbox", { name: "编辑任务标题" });
+      expect(composer).toHaveProperty("value", "提交周报");
+
+      await user.clear(composer);
+      await user.type(composer, "修改后的周报{Enter}");
+
+      expect(bridge.renameTask).toHaveBeenCalledWith("active", "修改后的周报");
+      expect(await screen.findByText("修改后的周报")).toBeTruthy();
+      expect(screen.getByRole("textbox", { name: "添加任务" })).toHaveProperty("value", "");
+    });
+
+    it("Esc cancels a composer title edit without renaming", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      await user.keyboard("{ArrowDown}");
+      await waitFor(() => {
+        expect(
+          document
+            .querySelector('[data-task-id="active"]')
+            ?.classList.contains("is-selected"),
+        ).toBe(true);
+      });
+
+      fireEvent.keyDown(window, { key: "e", metaKey: true });
+      const composer = screen.getByRole("textbox", { name: "编辑任务标题" });
+      expect(composer).toHaveProperty("value", "提交周报");
+
+      await user.clear(composer);
+      await user.type(composer, "不保存{Escape}");
+
+      expect(bridge.renameTask).not.toHaveBeenCalled();
+      expect(screen.getByRole("textbox", { name: "添加任务" })).toHaveProperty(
+        "value",
+        "",
+      );
+    });
+
+    it("edit action in an expanded row starts a composer edit", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      await user.click(screen.getByText("提交周报"));
+      await user.click(screen.getByRole("button", { name: /^编辑：/ }));
+
+      const composer = screen.getByRole("textbox", { name: "编辑任务标题" });
+      expect(composer).toHaveProperty("value", "提交周报");
+      expect(document.activeElement).toBe(composer);
     });
   });
 });

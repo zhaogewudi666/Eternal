@@ -87,4 +87,14 @@ describe("TaskComposer long-text capture", () => {
     rerender(<TaskComposer {...props} value="" />);
     expect(composer.style.height).toBe("");
   });
+
+  it("shows an editing state with a pencil and edit placeholder", () => {
+    renderComposer({ editing: true, value: "旧标题" });
+    expect(screen.getByRole("textbox", { name: "编辑任务标题" })).toHaveProperty(
+      "value",
+      "旧标题",
+    );
+    expect(screen.getByPlaceholderText("编辑任务标题…")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "添加任务" })).toBeNull();
+  });
 });

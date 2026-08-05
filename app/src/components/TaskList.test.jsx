@@ -25,6 +25,7 @@ function renderList(overrides = {}) {
     onSelect: vi.fn(),
     onToggle: vi.fn(),
     onEditReminder: vi.fn(),
+    onEdit: vi.fn(),
     onRequestDelete: vi.fn(),
     ...overrides,
   };
@@ -81,5 +82,16 @@ describe("TaskList long-title display", () => {
     expect(title.style.whiteSpace).toBe("");
     expect(title.classList.contains("is-expanded-title")).toBe(false);
     void cs;
+  });
+
+  it("exposes an edit action on an expanded row", async () => {
+    const user = userEvent.setup();
+    const { onEdit } = renderList();
+
+    expect(screen.queryByRole("button", { name: /^编辑：/ })).toBeNull();
+    await user.click(screen.getByText(baseTask.title));
+    await user.click(screen.getByRole("button", { name: /^编辑：/ }));
+
+    expect(onEdit).toHaveBeenCalledWith("t1");
   });
 });

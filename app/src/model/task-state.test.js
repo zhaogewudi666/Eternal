@@ -99,6 +99,15 @@ describe("nextEscapeAction", () => {
       "close-overlay",
     );
   });
+
+  it("cancels an active title edit before hiding the panel", () => {
+    expect(nextEscapeAction("normal", { editingTitle: true })).toBe(
+      "cancel-edit",
+    );
+    expect(nextEscapeAction("normal", { editingTitle: false })).toBe(
+      "hide-panel",
+    );
+  });
 });
 
 describe("partitionStackedTasks", () => {
@@ -274,5 +283,11 @@ describe("footerHintsForContext", () => {
     expect(
       footerHintsForContext({ mode: "normal", modifierLabel: "Ctrl+" }),
     ).toContain("Ctrl+1/2 分区");
+  });
+
+  it("shows edit hints while a title edit is active", () => {
+    expect(footerHintsForContext({ mode: "normal", editingTitle: true })).toEqual(
+      ["Enter 保存编辑", "Esc 取消"],
+    );
   });
 });
