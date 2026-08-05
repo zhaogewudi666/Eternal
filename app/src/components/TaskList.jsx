@@ -1,5 +1,5 @@
-import { BellSimple, Check, PencilSimple, Repeat, Trash } from "@phosphor-icons/react";
-import { useRef, useState } from "react";
+import { BellSimple, Check, Repeat, Trash } from "@phosphor-icons/react";
+import { useState } from "react";
 
 function reminderLabel(reminder) {
   if (!reminder) return "";
@@ -24,39 +24,13 @@ function TaskRow({
   onToggle,
   onEditReminder,
   onRequestDelete,
-  onRename,
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(task.title);
-  const committedRef = useRef(false);
   const completed = visualCompleted ?? task.completed;
   const hasReminder = Boolean(task.reminder);
   const reminderName = hasReminder
     ? `编辑提醒：${task.title}`
     : `设置提醒：${task.title}`;
-
-  function startEditing() {
-    committedRef.current = false;
-    setDraft(task.title);
-    setEditing(true);
-  }
-
-  function commitEdit() {
-    if (!editing || committedRef.current) return;
-    committedRef.current = true;
-    const trimmed = draft.trim();
-    setEditing(false);
-    if (trimmed && trimmed !== task.title) {
-      onRename(task.id, trimmed);
-    }
-  }
-
-  function cancelEdit() {
-    committedRef.current = true;
-    setDraft(task.title);
-    setEditing(false);
-  }
 
   function handleRowClick(event) {
     // Row action buttons manage their own clicks; do not toggle expansion.
@@ -85,29 +59,7 @@ function TaskRow({
       >
         {completed && <Check size={12} weight="bold" aria-hidden="true" />}
       </button>
-      {editing ? (
-        <input
-          className="task-title-input"
-          aria-label="编辑任务标题"
-          value={draft}
-          autoFocus
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              event.stopPropagation();
-              commitEdit();
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              cancelEdit();
-            }
-          }}
-          onBlur={commitEdit}
-        />
-      ) : (
-        <span className="task-title">{task.title}</span>
-      )}
+      <span className="task-title">{task.title}</span>
       {showStatus && (
         <span
           className={`task-status ${completed ? "is-completed" : ""}`}
@@ -116,16 +68,6 @@ function TaskRow({
         </span>
       )}
       <div className="task-actions">
-        {expanded && !editing && (
-          <button
-            className="row-edit"
-            type="button"
-            aria-label={`编辑：${task.title}`}
-            onClick={startEditing}
-          >
-            <PencilSimple size={14} weight="regular" aria-hidden="true" />
-          </button>
-        )}
         <button
           className={`reminder-control ${hasReminder ? "has-reminder" : ""}`}
           type="button"
@@ -166,7 +108,6 @@ function TaskSection({
   onToggle,
   onEditReminder,
   onRequestDelete,
-  onRename,
 }) {
   if (!tasks.length && !emptyMessage) return null;
 
@@ -196,7 +137,6 @@ function TaskSection({
                 onToggle={onToggle}
                 onEditReminder={onEditReminder}
                 onRequestDelete={onRequestDelete}
-                onRename={onRename}
               />
             );
           })
@@ -223,7 +163,6 @@ export function TaskList({
   onToggle,
   onEditReminder,
   onRequestDelete,
-  onRename,
 }) {
   const hasAny = activeTasks.length > 0 || completedTasks.length > 0;
 
@@ -260,7 +199,6 @@ export function TaskList({
         onToggle={onToggle}
         onEditReminder={onEditReminder}
         onRequestDelete={onRequestDelete}
-        onRename={onRename}
       />
       <TaskSection
         tasks={completedTasks}
@@ -275,7 +213,6 @@ export function TaskList({
         onToggle={onToggle}
         onEditReminder={onEditReminder}
         onRequestDelete={onRequestDelete}
-        onRename={onRename}
       />
     </section>
   );

@@ -26,7 +26,6 @@ function renderList(overrides = {}) {
     onToggle: vi.fn(),
     onEditReminder: vi.fn(),
     onRequestDelete: vi.fn(),
-    onRename: vi.fn(),
     ...overrides,
   };
   render(<TaskList {...props} />);
@@ -82,69 +81,5 @@ describe("TaskList long-title display", () => {
     expect(title.style.whiteSpace).toBe("");
     expect(title.classList.contains("is-expanded-title")).toBe(false);
     void cs;
-  });
-});
-
-describe("TaskList inline title editing", () => {
-  it("shows an edit action only after the row is expanded", async () => {
-    const user = userEvent.setup();
-    const { onRename } = renderList();
-    expect(screen.queryByRole("button", { name: /^编辑：/ })).toBeNull();
-
-    await user.click(screen.getByText(baseTask.title));
-    expect(screen.getByRole("button", { name: /^编辑：/ })).toBeTruthy();
-    void onRename;
-  });
-
-  it("turns the title into an input when editing starts", async () => {
-    const user = userEvent.setup();
-    renderList();
-    await user.click(screen.getByText(baseTask.title));
-
-    await user.click(screen.getByRole("button", { name: /^编辑：/ }));
-    const input = screen.getByRole("textbox");
-    expect(input).toHaveProperty("value", baseTask.title);
-    expect(document.activeElement).toBe(input);
-  });
-
-  it("saves the edited title with Enter", async () => {
-    const user = userEvent.setup();
-    const { onRename } = renderList();
-    await user.click(screen.getByText(baseTask.title));
-    await user.click(screen.getByRole("button", { name: /^编辑：/ }));
-
-    const input = screen.getByRole("textbox");
-    await user.clear(input);
-    await user.type(input, "修改后的标题{Enter}");
-
-    expect(onRename).toHaveBeenCalledWith("t1", "修改后的标题");
-    expect(screen.queryByRole("textbox")).toBeNull();
-  });
-
-  it("cancels with Escape without renaming", async () => {
-    const user = userEvent.setup();
-    const { onRename } = renderList();
-    await user.click(screen.getByText(baseTask.title));
-    await user.click(screen.getByRole("button", { name: /^编辑：/ }));
-
-    const input = screen.getByRole("textbox");
-    await user.clear(input);
-    await user.type(input, "不保存的内容{Escape}");
-
-    expect(onRename).not.toHaveBeenCalled();
-    expect(screen.queryByRole("textbox")).toBeNull();
-  });
-
-  it("ignores a blank save", async () => {
-    const user = userEvent.setup();
-    const { onRename } = renderList();
-    await user.click(screen.getByText(baseTask.title));
-    await user.click(screen.getByRole("button", { name: /^编辑：/ }));
-
-    const input = screen.getByRole("textbox");
-    await user.clear(input);
-    await user.type(input, "{Enter}");
-
-    expect(onRename).not.toHaveBeenCalled();
   });
 });

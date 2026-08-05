@@ -929,7 +929,6 @@ export function App() {
           onToggle={handleToggle}
           onEditReminder={openReminder}
           onRequestDelete={openDeleteConfirm}
-          onRename={handleRename}
         />
       </div>
 
@@ -963,6 +962,7 @@ export function App() {
           task={selectedTask}
           onSave={handleSaveReminder}
           onClear={handleClearReminder}
+          onRename={handleRename}
           onClose={() => {
             setMode("normal");
             setIsListNavigating(true);
