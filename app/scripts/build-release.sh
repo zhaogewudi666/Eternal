@@ -14,6 +14,7 @@ VERSION="${1:?version required}"
 NOTES_FILE="${2:?notes file required}"
 GITEE_REPO="${3:-}"
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+RELEASES_DIR="$(dirname "$APP_DIR")/releases"
 REPO="zhaogewudi666/Eternal"
 KEY="$HOME/.tauri/eternal-updater.key"
 
@@ -40,12 +41,13 @@ echo "== Building update.json =="
 SIGNATURE="$(cat "$SIG")"
 PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if [ -n "$GITEE_REPO" ]; then
-  WIN_URL="https://gitee.com/${GITEE_REPO}/releases/download/v${VERSION}/Eternal-${VERSION}-Windows-x64-Setup.exe"
+  WIN_URL="https://gitee.com/${GITEE_REPO}/releases/download/v${VERSION}/Eternal_${VERSION}_x64-setup.exe"
 else
-  WIN_URL="https://github.com/${REPO}/releases/download/v${VERSION}/Eternal-${VERSION}-Windows-x64-Setup.exe"
+  WIN_URL="https://github.com/${REPO}/releases/download/v${VERSION}/Eternal_${VERSION}_x64-setup.exe"
 fi
 NOTES="$(head -5 "$NOTES_FILE" | tr '\n' ' ')"
-cat > "$APP_DIR/releases/${VERSION}/update.json" <<EOF
+mkdir -p "$RELEASES_DIR/${VERSION}"
+cat > "$RELEASES_DIR/${VERSION}/update.json" <<EOF
 {
   "version": "${VERSION}",
   "notes": "${NOTES}",
@@ -63,7 +65,9 @@ echo "update.json written to releases/${VERSION}/update.json"
 echo "== Creating GitHub release v${VERSION} =="
 gh release create "v${VERSION}" --repo "$REPO" --title "Eternal ${VERSION}" \
   --target main --notes-file "$NOTES_FILE" \
-  "$DMG" "$EXE" "$SIG" \
-  "$APP_DIR/releases/${VERSION}/update.json" 2>&1 | tail -3
+  "$DMG#Eternal-${VERSION}-macOS-arm64.dmg" \
+  "$EXE#Eternal-${VERSION}-Windows-x64-Setup.exe" \
+  "$SIG#Eternal-${VERSION}-Windows-x64-Setup.exe.sig" \
+  "$RELEASES_DIR/${VERSION}/update.json" 2>&1 | tail -3
 
 echo "== Done. Next: mirror release artifacts + update.json to Gitee. =="
