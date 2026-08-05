@@ -36,6 +36,13 @@ SIG="$EXE.sig"
 [ -f "$DMG" ] || { echo "missing dmg: $DMG"; exit 1; }
 [ -f "$EXE" ] && [ -f "$SIG" ] || { echo "missing exe or sig"; exit 1; }
 
+echo "== Archiving artifacts =="
+mkdir -p "$RELEASES_DIR/${VERSION}"
+cp "$DMG" "$RELEASES_DIR/${VERSION}/Eternal-${VERSION}-macOS-arm64.dmg"
+cp "$EXE" "$RELEASES_DIR/${VERSION}/Eternal-${VERSION}-Windows-x64-Setup.exe"
+cp "$SIG" "$RELEASES_DIR/${VERSION}/"
+(cd "$RELEASES_DIR/${VERSION}" && shasum -a 256 Eternal-${VERSION}-macOS-arm64.dmg Eternal-${VERSION}-Windows-x64-Setup.exe > SHA256SUMS)
+
 echo "== Building update.json (Gitee-first) =="
 SIGNATURE="$(cat "$SIG")"
 PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
