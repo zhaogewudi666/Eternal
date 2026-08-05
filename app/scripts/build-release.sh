@@ -1,21 +1,20 @@
 #!/bin/bash
 # Eternal release builder: builds macOS dmg + Windows exe (signed updater
-# artifacts), generates update.json, uploads to GitHub Releases.
-# Gitee mirror upload is a follow-up once the Gitee repo exists.
+# artifacts), generates update.json (Gitee-first URL), publishes the GitHub
+# Release, then mirrors code + assets to both GitHub and Gitee so domestic
+# Windows clients can auto-update from Gitee raw.
 #
-# Usage: build-release.sh <version> <notes-file> [gitee-repo]
-#   version     e.g. 0.2.7
-#   notes-file  markdown release notes used for both GitHub release body
-#               and the update.json "notes" field
-#   gitee-repo  optional "owner/repo" on Gitee to also mirror (default: none)
+# Usage: build-release.sh <version> <notes-file>
+#   version      e.g. 0.2.9
+#   notes-file   markdown release notes (GitHub release body + update notes)
 set -euo pipefail
 
 VERSION="${1:?version required}"
 NOTES_FILE="${2:?notes file required}"
-GITEE_REPO="${3:-}"
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASES_DIR="$(dirname "$APP_DIR")/releases"
 REPO="zhaogewudi666/Eternal"
+GITEE_REPO="zhaowudi/eternal"
 KEY="$HOME/.tauri/eternal-updater.key"
 
 export RUSTUP_HOME="$HOME/.local/share/mise/rustup"
@@ -37,14 +36,10 @@ SIG="$EXE.sig"
 [ -f "$DMG" ] || { echo "missing dmg: $DMG"; exit 1; }
 [ -f "$EXE" ] && [ -f "$SIG" ] || { echo "missing exe or sig"; exit 1; }
 
-echo "== Building update.json =="
+echo "== Building update.json (Gitee-first) =="
 SIGNATURE="$(cat "$SIG")"
 PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-if [ -n "$GITEE_REPO" ]; then
-  WIN_URL="https://gitee.com/${GITEE_REPO}/releases/download/v${VERSION}/Eternal_${VERSION}_x64-setup.exe"
-else
-  WIN_URL="https://github.com/${REPO}/releases/download/v${VERSION}/Eternal_${VERSION}_x64-setup.exe"
-fi
+WIN_URL="https://gitee.com/${GITEE_REPO}/raw/main/releases/${VERSION}/Eternal_${VERSION}_x64-setup.exe"
 NOTES="$(head -5 "$NOTES_FILE" | tr '\n' ' ')"
 mkdir -p "$RELEASES_DIR/${VERSION}"
 cat > "$RELEASES_DIR/${VERSION}/update.json" <<EOF
@@ -70,4 +65,12 @@ gh release create "v${VERSION}" --repo "$REPO" --title "Eternal ${VERSION}" \
   "$SIG#Eternal-${VERSION}-Windows-x64-Setup.exe.sig" \
   "$RELEASES_DIR/${VERSION}/update.json" 2>&1 | tail -3
 
-echo "== Done. Next: mirror release artifacts + update.json to Gitee. =="
+echo "== Mirroring to GitHub + Gitee (code + assets + root update.json) =="
+cp "$RELEASES_DIR/${VERSION}/update.json" "$RELEASES_DIR/../update.json"
+cd "$(dirname "$RELEASES_DIR")"
+git add "releases/${VERSION}/" update.json
+git commit -m "chore: archive v${VERSION} release assets and update manifest" 2>&1 | tail -1
+git push origin HEAD:main 2>&1 | tail -1
+GIT_TERMINAL_PROMPT=0 git push gitee HEAD:main 2>&1 | tail -1
+
+echo "== Done. GitHub + Gitee both at $(git rev-parse --short HEAD) =="
