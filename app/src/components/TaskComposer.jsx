@@ -3,10 +3,16 @@ import { MagnifyingGlass, PencilSimple, Plus, X } from "@phosphor-icons/react";
 
 import { isSubmitKey } from "../model/task-state";
 
+// The composer textarea grows with its content but stops at three rows
+// (3 × 20px line-height); longer drafts scroll inside the box instead of
+// stretching the whole panel.
+const MAX_COMPOSER_HEIGHT = 60;
+
 function autoGrow(element) {
   // Reset first so the height follows the content, not its previous size.
   element.style.height = "auto";
-  element.style.height = `${element.scrollHeight}px`;
+  const next = Math.min(element.scrollHeight, MAX_COMPOSER_HEIGHT);
+  element.style.height = `${next}px`;
 }
 
 export function TaskComposer({
@@ -21,11 +27,15 @@ export function TaskComposer({
 }) {
   const isSearch = mode === "search";
 
-  // After a submit the App clears the draft; shrink back to a single row.
+  // Keep the box in step with the value: shrink after a submit, and grow to
+  // fit a prefilled multi-line title when an edit starts.
   useEffect(() => {
-    if (!isSearch && !value && inputRef.current) {
+    if (isSearch || !inputRef.current) return;
+    if (!value) {
       inputRef.current.style.height = "";
+      return;
     }
+    autoGrow(inputRef.current);
   }, [isSearch, value, inputRef]);
 
   if (isSearch) {

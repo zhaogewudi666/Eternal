@@ -766,9 +766,13 @@ export function App() {
         !event.shiftKey &&
         event.key.toLowerCase() === "e"
       ) {
-        // Cmd/Ctrl+E pulls the selected (or first unfinished) row's title into
-        // the composer for editing. Works even when focus is on the composer.
-        if (mode === "normal") {
+        // Cmd+E on macOS / Ctrl+E on Windows pulls the selected (or first
+        // unfinished) row's title into the composer for editing. Works even
+        // when focus is on the composer.
+        if (
+          mode === "normal" &&
+          (isMacPlatform(platform) ? event.metaKey : event.ctrlKey)
+        ) {
           event.preventDefault();
           const target =
             selectedTask ||

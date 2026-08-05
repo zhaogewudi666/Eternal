@@ -267,9 +267,10 @@ button {
 
 .composer textarea {
   height: 24px;
+  max-height: 60px;
   padding: 0;
   resize: none;
-  overflow-y: hidden;
+  overflow-y: auto;
 }
 
 .composer input::placeholder {

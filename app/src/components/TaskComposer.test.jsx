@@ -49,6 +49,34 @@ describe("TaskComposer long-text capture", () => {
     expect(Number.parseInt(composer.style.height, 10)).toBeGreaterThan(40);
   });
 
+  it("caps the textarea height at three rows (60px)", async () => {
+    const user = userEvent.setup();
+    renderComposer();
+    const composer = screen.getByRole("textbox", { name: "添加任务" });
+
+    Object.defineProperty(composer, "scrollHeight", {
+      configurable: true,
+      value: 200,
+    });
+    await user.type(composer, "很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长");
+
+    expect(composer.style.height).toBe("60px");
+  });
+
+  it("grows the editing textarea while typing", async () => {
+    const user = userEvent.setup();
+    renderComposer({ editing: true, value: "旧标题" });
+    const composer = screen.getByRole("textbox", { name: "编辑任务标题" });
+
+    Object.defineProperty(composer, "scrollHeight", {
+      configurable: true,
+      value: 40,
+    });
+    await user.type(composer, "加长标题内容");
+
+    expect(composer.style.height).toBe("40px");
+  });
+
   it("submits on Enter and keeps Shift+Enter as a newline", async () => {
     const user = userEvent.setup();
     const { onSubmit } = renderComposer({ value: "准备开始" });
@@ -81,7 +109,7 @@ describe("TaskComposer long-text capture", () => {
       value: 84,
     });
     await user.type(composer, "加长内容");
-    expect(composer.style.height).toBe("84px");
+    expect(composer.style.height).toBe("60px");
 
     // Simulate App clearing the draft after submit: value prop becomes "".
     rerender(<TaskComposer {...props} value="" />);

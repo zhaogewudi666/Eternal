@@ -2293,7 +2293,7 @@ describe("Eternal task panel", () => {
         ).toBe(true);
       });
 
-      fireEvent.keyDown(window, { key: "e", metaKey: true });
+      fireEvent.keyDown(window, { key: "e", ctrlKey: true });
       const composer = screen.getByRole("textbox", { name: "编辑任务标题" });
       expect(composer).toHaveProperty("value", "提交周报");
 
@@ -2319,7 +2319,7 @@ describe("Eternal task panel", () => {
         ).toBe(true);
       });
 
-      fireEvent.keyDown(window, { key: "e", metaKey: true });
+      fireEvent.keyDown(window, { key: "e", ctrlKey: true });
       const composer = screen.getByRole("textbox", { name: "编辑任务标题" });
       expect(composer).toHaveProperty("value", "提交周报");
 
@@ -2351,7 +2351,7 @@ describe("Eternal task panel", () => {
       render(<App />);
       await screen.findByText("提交周报");
 
-      fireEvent.keyDown(window, { key: "e", metaKey: true });
+      fireEvent.keyDown(window, { key: "e", ctrlKey: true });
       const composer = screen.getByRole("textbox", { name: "编辑任务标题" });
       expect(composer).toHaveProperty("value", "提交周报");
     });
@@ -2365,7 +2365,7 @@ describe("Eternal task panel", () => {
       render(<App />);
       await screen.findByText("提交周报");
 
-      fireEvent.keyDown(window, { key: "e", metaKey: true });
+      fireEvent.keyDown(window, { key: "e", ctrlKey: true });
       expect(document.querySelector('[data-task-id="active"]')).toBeNull();
 
       const composer = screen.getByRole("textbox", { name: "编辑任务标题" });
@@ -2386,7 +2386,7 @@ describe("Eternal task panel", () => {
       render(<App />);
       await screen.findByText("提交周报");
 
-      fireEvent.keyDown(window, { key: "e", metaKey: true });
+      fireEvent.keyDown(window, { key: "e", ctrlKey: true });
       expect(document.querySelector('[data-task-id="active"]')).toBeNull();
 
       fireEvent.keyDown(window, { key: "Escape" });
@@ -2395,6 +2395,18 @@ describe("Eternal task panel", () => {
       expect(
         document.querySelector('[data-task-id="active"]'),
       ).not.toBeNull();
+    });
+
+    it("ignores Cmd+E (macOS modifier) on a Windows runtime", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "e", metaKey: true });
+      expect(
+        screen.queryByRole("textbox", { name: "编辑任务标题" }),
+      ).toBeNull();
+      expect(screen.getByRole("textbox", { name: "添加任务" })).toBeTruthy();
     });
   });
 });
