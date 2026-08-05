@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Eternal",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "identifier": "com.eternal.todo",
   "build": {
     "frontendDist": "../dist/client",
