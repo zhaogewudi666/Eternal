@@ -1,0 +1,11 @@
+{
+  "version": "0.2.10",
+  "notes": "# Eternal v0.2.10  本地优先、键盘优先的轻量待办面板：全局快捷键唤出，用完即隐，Windows 托盘 / macOS 菜单栏常驻。  ## 本版修复 ",
+  "pub_date": "2026-08-05T04:15:33Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQlJKQTlMcFc1bWRNL01FRUdRcWJaWHRobHJtYjlhckcxa1hPZGdPTE9YZW9aeUNuSUtSY254QzJUZ1dQN0VGTWlvTnhRazVMTGh5S3JXV0hPQ1IyWDAxN1VYSkZNcWdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1OTAzMzMzCWZpbGU6RXRlcm5hbF8wLjIuMTBfeDY0LXNldHVwLmV4ZQo1TDZ1QlMrYnRkZkoxZXlQb3d5ek5ZZ1h0V2VrVEZaTlM5cTBTSlBRTThSZHkzU0l2Q0hpeWhNNyswUVF2M01vdmxTNTcxLzN3cEhDaTBTUmJLQUxCZz09Cg==",
+      "url": "https://gitee.com/zhaowudi/eternal/raw/main/releases/0.2.10/Eternal-0.2.10-Windows-x64-Setup.exe"
+    }
+  }
+}
