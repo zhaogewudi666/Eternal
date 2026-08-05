@@ -48,6 +48,11 @@ import {
   isMacPlatform,
 } from "./model/shortcut";
 import {
+  checkForUpdates,
+  downloadAndInstallUpdate,
+  isUpdaterSupported,
+} from "./lib/updater";
+import {
   filterTasks,
   footerHintsForContext,
   isNativeActivateTarget,
@@ -113,6 +118,10 @@ export function App() {
   const [autostartEnabled, setAutostartEnabled] = useState(null);
   const [autostartPending, setAutostartPending] = useState(false);
   const [autostartError, setAutostartError] = useState("");
+  const [updateState, setUpdateState] = useState("idle");
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [updateError, setUpdateError] = useState("");
+  const updateRef = useRef(null);
   // Visual-only completion state while the row stays in its old section.
   // { id, updated } — checkbox/strike follow `updated` until the timer commits.
   const [toggleTransition, setToggleTransition] = useState(null);
@@ -267,6 +276,62 @@ export function App() {
     },
     [startEdit, tasks],
   );
+
+  const handleCheckForUpdates = useCallback(async () => {
+    if (!isUpdaterSupported()) return;
+    setUpdateState("checking");
+    setUpdateError("");
+    try {
+      const update = await checkForUpdates();
+      updateRef.current = update;
+      if (update) {
+        setUpdateInfo({ version: update.version, notes: update.body });
+        setUpdateState("available");
+      } else {
+        setUpdateInfo(null);
+        setUpdateState("idle");
+      }
+    } catch (reason) {
+      setUpdateState("error");
+      setUpdateError(`检查更新失败：${String(reason?.message || reason)}`);
+    }
+  }, []);
+
+  const handleInstallUpdate = useCallback(async () => {
+    const update = updateRef.current;
+    if (!update) return;
+    setUpdateState("installing");
+    setUpdateError("");
+    try {
+      await downloadAndInstallUpdate(update);
+      // relaunch happens inside downloadAndInstallUpdate; if we return here
+      // the app is about to restart.
+    } catch (reason) {
+      setUpdateState("available");
+      setUpdateError(`更新失败：${String(reason?.message || reason)}`);
+    }
+  }, []);
+
+  // Silently check for a newer build once on startup (Windows clients).
+  useEffect(() => {
+    if (!isUpdaterSupported()) return undefined;
+    let cancelled = false;
+    checkForUpdates()
+      .then((update) => {
+        if (cancelled) return;
+        updateRef.current = update;
+        if (update) {
+          setUpdateInfo({ version: update.version, notes: update.body });
+          setUpdateState("available");
+        }
+      })
+      .catch(() => {
+        // Startup check is best-effort; keep the manual button available.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Keep keyboard navigation coupled to the notes scrollport. The row can be
   // selected while focus is still on the global window listener, so relying on
@@ -1017,6 +1082,12 @@ export function App() {
             autostartError={autostartError}
             onAutostartChange={handleAutostartChange}
             onRetryAutostartLoad={loadAutostartState}
+            updaterSupported={isUpdaterSupported()}
+            updateState={updateState}
+            updateInfo={updateInfo}
+            updateError={updateError}
+            onCheckForUpdates={handleCheckForUpdates}
+            onInstallUpdate={handleInstallUpdate}
           />
         </div>
       )}

@@ -13,6 +13,12 @@ export function SettingsPopover({
   autostartError,
   onAutostartChange,
   onRetryAutostartLoad,
+  updaterSupported = false,
+  updateState = "idle",
+  updateInfo = null,
+  updateError = "",
+  onCheckForUpdates,
+  onInstallUpdate,
 }) {
   const status = isRecordingShortcut
     ? "正在等待新的组合，按 Esc 取消录制。"
@@ -151,6 +157,51 @@ export function SettingsPopover({
           </button>
         ) : null}
       </section>
+
+      {updaterSupported && (
+        <section className="shortcut-section" aria-label="软件更新">
+          <div className="shortcut-heading">
+            <strong>软件更新</strong>
+          </div>
+          <div className="shortcut-row">
+            {updateState === "available" && updateInfo ? (
+              <>
+                <span className="update-available">
+                  发现新版本 v{updateInfo.version}
+                </span>
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={updateState === "installing"}
+                  onClick={onInstallUpdate}
+                >
+                  {updateState === "installing" ? "更新中…" : "立即更新"}
+                </button>
+              </>
+            ) : (
+              <button
+                className="text-button"
+                type="button"
+                disabled={updateState === "checking" || updateState === "installing"}
+                onClick={onCheckForUpdates}
+              >
+                {updateState === "checking" ? "检查中…" : "检查更新"}
+              </button>
+            )}
+          </div>
+          {updateError ? (
+            <p className="shortcut-hint is-error" role="status">
+              {updateError}
+            </p>
+          ) : (
+            <p className="shortcut-hint" role="note">
+              {updateState === "available"
+                ? "点击「立即更新」将自动下载并安装，完成后应用会自动重启。"
+                : "检查是否有新版本可用；更新为全自动安装。"}
+            </p>
+          )}
+        </section>
+      )}
     </section>
   );
 }

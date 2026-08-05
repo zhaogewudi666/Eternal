@@ -734,6 +734,13 @@ button {
   font-size: 13px;
 }
 
+.update-available {
+  min-width: 0;
+  flex: 1;
+  color: var(--color-accent);
+  font-size: 12px;
+}
+
 .autostart-row input[type="checkbox"] {
   width: 16px;
   height: 16px;

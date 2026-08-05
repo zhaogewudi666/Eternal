@@ -26,7 +26,7 @@ use tauri_plugin_notification::NotificationExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // Single-instance must register before any window/task setup side effects.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if secondary_instance_should_focus_existing_main() {
@@ -44,6 +44,12 @@ pub fn run() {
                 .with_state_flags(tauri_plugin_window_state::StateFlags::POSITION)
                 .build(),
         )
+        .plugin(tauri_plugin_process::init());
+
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+
+    builder
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
