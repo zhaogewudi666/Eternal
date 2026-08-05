@@ -30,6 +30,7 @@ import {
   hidePanel,
   isAutostartEnabled,
   listTasks,
+  renameTask,
   setGlobalShortcut,
   setPanelPinned,
   setReminder,
@@ -227,6 +228,15 @@ export function App() {
     () => tasks.filter((task) => !task.completed).length,
     [tasks],
   );
+
+  const handleRename = useCallback(async (id, title) => {
+    try {
+      const updated = await renameTask(id, title);
+      setTasks((current) => replaceTask(current, updated));
+    } catch (reason) {
+      setError(String(reason));
+    }
+  }, []);
   const selectedTask = tasks.find((task) => task.id === selectedId) || null;
 
   // Keep keyboard navigation coupled to the notes scrollport. The row can be
@@ -919,6 +929,7 @@ export function App() {
           onToggle={handleToggle}
           onEditReminder={openReminder}
           onRequestDelete={openDeleteConfirm}
+          onRename={handleRename}
         />
       </div>
 

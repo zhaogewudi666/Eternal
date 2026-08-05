@@ -110,6 +110,21 @@ export async function toggleTask(id) {
   return updated;
 }
 
+export async function renameTask(id, title) {
+  if (isTauriRuntime()) return invoke("rename_task", { id, title });
+
+  const updated = await previewMutation((tasks) => {
+    const task = tasks.find((candidate) => candidate.id === id);
+    if (!task) {
+      throw new Error("找不到这项待办");
+    }
+    task.title = title.trim();
+    return { ...task };
+  });
+  emitTasksChangedPreview();
+  return updated;
+}
+
 export async function deleteTask(id) {
   if (isTauriRuntime()) return invoke("delete_task", { id });
 

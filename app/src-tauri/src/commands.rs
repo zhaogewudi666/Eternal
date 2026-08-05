@@ -164,6 +164,18 @@ pub fn clear_reminder(
 }
 
 #[tauri::command]
+pub fn rename_task(
+    id: String,
+    title: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Task, String> {
+    let task = with_service(&state, |service| service.rename(&id, &title))?;
+    state.bump_and_emit_tasks_changed(&app);
+    Ok(task)
+}
+
+#[tauri::command]
 pub fn delete_task(id: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     with_service(&state, |service| service.delete(&id))?;
     state.bump_and_emit_tasks_changed(&app);

@@ -59,6 +59,15 @@ impl TaskService {
         self.update_task(id, |task| task.reminder = None)
     }
 
+    pub fn rename(&mut self, id: &str, title: &str) -> Result<Task, String> {
+        self.ensure_writable()?;
+        let title = title.trim();
+        if title.is_empty() {
+            return Err("待办内容不能为空".to_string());
+        }
+        self.update_task(id, |task| task.title = title.to_string())
+    }
+
     pub fn delete(&mut self, id: &str) -> Result<(), String> {
         self.ensure_writable()?;
         let mut tasks = self.repository.tasks().to_vec();
@@ -187,6 +196,52 @@ mod tests {
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, second.id);
         assert_eq!(tasks[0].title, "第二项");
+    }
+
+    #[test]
+    fn renames_a_task_title_and_preserves_other_fields() {
+        let mut service = service();
+        let task = service.create("旧标题", 100).expect("create task");
+        service
+            .set_reminder(&task.id, 5_000, Some(30))
+            .expect("set reminder");
+
+        let updated = service.rename(&task.id, "  新标题  ").expect("rename");
+
+        assert_eq!(updated.title, "新标题");
+        assert_eq!(updated.id, task.id);
+        assert!(!updated.completed);
+        assert_eq!(updated.created_at_ms, 100);
+        assert_eq!(
+            updated
+                .reminder
+                .as_ref()
+                .and_then(|reminder| reminder.repeat_every_minutes),
+            Some(30)
+        );
+        assert_eq!(service.list()[0].title, "新标题");
+    }
+
+    #[test]
+    fn rejects_blank_renames_without_touching_storage() {
+        let mut service = service();
+        let task = service.create("保持不变", 100).expect("create task");
+
+        let error = service.rename(&task.id, "   ").unwrap_err();
+
+        assert_eq!(error, "待办内容不能为空");
+        assert_eq!(service.list()[0].title, "保持不变");
+    }
+
+    #[test]
+    fn rename_returns_a_missing_id_error_without_changing_storage() {
+        let mut service = service();
+        let task = service.create("仍在", 100).expect("create task");
+
+        let error = service.rename("missing-id", "新名字").unwrap_err();
+
+        assert_eq!(error, "找不到这项待办");
+        assert_eq!(service.list()[0].title, "仍在");
     }
 
     #[test]

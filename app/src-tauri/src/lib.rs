@@ -119,6 +119,7 @@ pub fn run() {
             commands::delete_task,
             commands::set_reminder,
             commands::clear_reminder,
+            commands::rename_task,
             commands::hide_panel,
             commands::get_global_shortcut,
             commands::set_global_shortcut,
