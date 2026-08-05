@@ -46,7 +46,7 @@ cp "$SIG" "$RELEASES_DIR/${VERSION}/"
 echo "== Building update.json (Gitee-first) =="
 SIGNATURE="$(cat "$SIG")"
 PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-WIN_URL="https://gitee.com/${GITEE_REPO}/raw/main/releases/${VERSION}/Eternal_${VERSION}_x64-setup.exe"
+WIN_URL="https://gitee.com/${GITEE_REPO}/raw/main/releases/${VERSION}/Eternal-${VERSION}-Windows-x64-Setup.exe"
 NOTES="$(head -5 "$NOTES_FILE" | tr '\n' ' ')"
 mkdir -p "$RELEASES_DIR/${VERSION}"
 cat > "$RELEASES_DIR/${VERSION}/update.json" <<EOF
