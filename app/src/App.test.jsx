@@ -2345,5 +2345,56 @@ describe("Eternal task panel", () => {
       expect(composer).toHaveProperty("value", "提交周报");
       expect(document.activeElement).toBe(composer);
     });
+
+    it("Cmd+E edits the first unfinished row when nothing is selected", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "e", metaKey: true });
+      const composer = screen.getByRole("textbox", { name: "编辑任务标题" });
+      expect(composer).toHaveProperty("value", "提交周报");
+    });
+
+    it("hides the edited row from the list and restores it after save", async () => {
+      const user = userEvent.setup();
+      bridge.renameTask.mockResolvedValueOnce({
+        ...activeTask,
+        title: "保存后的标题",
+      });
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "e", metaKey: true });
+      expect(document.querySelector('[data-task-id="active"]')).toBeNull();
+
+      const composer = screen.getByRole("textbox", { name: "编辑任务标题" });
+      expect(composer).toHaveProperty("value", "提交周报");
+
+      await user.clear(composer);
+      await user.type(composer, "保存后的标题{Enter}");
+
+      expect(bridge.renameTask).toHaveBeenCalledWith("active", "保存后的标题");
+      expect(await screen.findByText("保存后的标题")).toBeTruthy();
+      expect(
+        document.querySelector('[data-task-id="active"]'),
+      ).not.toBeNull();
+    });
+
+    it("restores the hidden row after Esc without changes", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("提交周报");
+
+      fireEvent.keyDown(window, { key: "e", metaKey: true });
+      expect(document.querySelector('[data-task-id="active"]')).toBeNull();
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(await screen.findByText("提交周报")).toBeTruthy();
+      expect(bridge.renameTask).not.toHaveBeenCalled();
+      expect(
+        document.querySelector('[data-task-id="active"]'),
+      ).not.toBeNull();
+    });
   });
 });

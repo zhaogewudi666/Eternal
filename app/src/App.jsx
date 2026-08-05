@@ -226,13 +226,23 @@ export function App() {
     () => filterTasks(tasks, isSearching ? query : ""),
     [isSearching, query, tasks],
   );
+  // While a row is being edited in the composer, hide it from the list so the
+  // panel never shows the old title next to the editing box. It returns (with
+  // the updated title) as soon as the edit is saved or cancelled.
+  const displayTasks = useMemo(
+    () =>
+      editingId
+        ? filteredTasks.filter((task) => task.id !== editingId)
+        : filteredTasks,
+    [editingId, filteredTasks],
+  );
   const { active: activeTasks, completed: completedTasks } = useMemo(
-    () => partitionStackedTasks(filteredTasks),
-    [filteredTasks],
+    () => partitionStackedTasks(displayTasks),
+    [displayTasks],
   );
   const navigableTasks = useMemo(
-    () => stackedNavigationOrder(filteredTasks),
-    [filteredTasks],
+    () => stackedNavigationOrder(displayTasks),
+    [displayTasks],
   );
   const activeCount = useMemo(
     () => tasks.filter((task) => !task.completed).length,
@@ -756,11 +766,19 @@ export function App() {
         !event.shiftKey &&
         event.key.toLowerCase() === "e"
       ) {
-        // Cmd/Ctrl+E on a selected row pulls its title into the composer for
-        // editing; the list itself stays untouched.
-        if (mode === "normal" && isListNavigating && selectedTask) {
+        // Cmd/Ctrl+E pulls the selected (or first unfinished) row's title into
+        // the composer for editing. Works even when focus is on the composer.
+        if (mode === "normal") {
           event.preventDefault();
-          startEdit(selectedTask);
+          const target =
+            selectedTask ||
+            filteredTasks.find((task) => !task.completed) ||
+            filteredTasks[0] ||
+            null;
+          if (target) {
+            setSelectedId(target.id);
+            startEdit(target);
+          }
         }
         return;
       }
@@ -920,6 +938,7 @@ export function App() {
     applyShortcut,
     cancelEdit,
     editingId,
+    filteredTasks,
     handleDelete,
     handlePanelPinToggle,
     handleToggle,
